@@ -1,0 +1,4 @@
+dependencies:
+  nopnop2002/ili9340:
+    path: components/ili9340/
+    git: https://github.com/nopnop2002/esp-idf-ili9340.git
