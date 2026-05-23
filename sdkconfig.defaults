@@ -20,9 +20,6 @@ CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
 # CONFIG_ESPTOOLPY_OCT_FLASH is not set
 CONFIG_ESPTOOLPY_FLASH_MODE_AUTO_DETECT=y
 
-
-# ⚠ IO38 = BUILTIN LED – sterowanie PWM będzie wpływać na diodę na płytce
-
 # SD MISO współdzielone z TFT na SPI2
 # MISO=IO13 (lewa strona, sąsiad IO12=SCLK)
 # XPT2046 MISO (jeśli touchscreen) = IO13
