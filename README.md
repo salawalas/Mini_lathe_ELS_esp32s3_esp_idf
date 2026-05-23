@@ -30,7 +30,7 @@ i glowica podzialowa VEVOR BS4-KP100-57.
 | Silnik dosuwu X | NEMA23 57HD3403-16B, 3.75V, 2.5A/faze |
 | Sterowniki | 3x DM556 (20-50V DC, do 5.6A, mikrostepping 12800 kr/obr) |
 | Przekladnia wrzeciona | Glowica VEVOR BS4-KP100-57, slimakowa 1:6 |
-| Zasilacz | 36V / 5.6A / 200VA SWPS |
+| Zasilacz | 36V / 5.6A / 350VA SWPS | Active PFC Mean Well
 | Bezpieczenstwo | Modul MOSFET PWM (5-55V, do 100A) odcina zasilanie DM556; E-STOP grzybkowy |
 | SD card | FAT32 przez SPI2 (MOSI/SCLK/MISO wspoldzielone z TFT) |
 
