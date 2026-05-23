@@ -1,4 +1,4 @@
-# Mini Lathe Controller v6
+# Mini Lathe Controller v6.1
 
 ## Third-party components
 
