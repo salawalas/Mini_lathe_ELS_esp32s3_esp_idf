@@ -2,13 +2,13 @@
 //  ui_menu.c  –  System menu tokarki
 //  Mini Lathe Controller
 //
-//  WAŻNE: używa display_compat.h (stare API RGB565 → nowe RGB888)
+//  WAŻNE: używa display_compat.h (stare API rgb565 → nowe RGB888)
 //  Każda funkcja draw_xxx() kończy się display_flush()
 //  → aktualizacja całego ekranu jednym DMA burst → zero mrugania
 // ============================================================
 
 #include "ui_menu.h"
-#include "display_compat.h" // ← display + wrapper RGB565→RGB888
+#include "display_compat.h" // ← display + wrapper rgb565→RGB888
 #include "encoder.h"
 #include "stepper.h"
 #include "spindle.h"
@@ -55,15 +55,15 @@ volatile bool g_homed = false;
 #define UI_HEADER_TEXT_Y ((HEADER_H - FONT_SM_H) / 2)
 #define UI_FOOTER_TEXT_Y ((FOOTER_H - FONT_SM_H) / 2)
 
-// Kolory motywu (RGB565)
-#define COL_HDR_MAIN RGB565(0, 80, 160)
-#define COL_HDR_JOG RGB565(0, 110, 60)
-#define COL_HDR_FEED RGB565(120, 70, 0)
-#define COL_HDR_SPIN RGB565(140, 0, 0)
-#define COL_HDR_SET RGB565(60, 60, 60)
-#define COL_HDR_MENU RGB565(30, 30, 90)
-#define COL_FOOTER RGB565(20, 20, 20)
-#define COL_SEL RGB565(0, 80, 160)
+// Kolory motywu (rgb565)
+#define COL_HDR_MAIN rgb565(0, 80, 160)
+#define COL_HDR_JOG rgb565(0, 110, 60)
+#define COL_HDR_FEED rgb565(120, 70, 0)
+#define COL_HDR_SPIN rgb565(140, 0, 0)
+#define COL_HDR_SET rgb565(60, 60, 60)
+#define COL_HDR_MENU rgb565(30, 30, 90)
+#define COL_FOOTER rgb565(20, 20, 20)
+#define COL_SEL rgb565(0, 80, 160)
 #define COL_VAL COLOR_CYAN
 #define COL_LABEL COLOR_LIGHT_GREY
 #define COL_WARN COLOR_ORANGE
@@ -108,22 +108,25 @@ static const uint16_t JOG_STEPS[] = {1, 8, 16, 80, 160};
 static const char *JOG_STEPS_LBL[] = {"1", "8", "16", "80", "160"};
 #define JOG_STEPS_COUNT 5
 
+// Nazwy pozycji menu – kolejność musi odpowiadać MENU_ORDER[]
 static const char *MENU_NAMES[] = {
     "Dashboard",
-    "JOG",
-    "Posuw AUTO",
+    "Jog osi Z",
+    "Posuw Z",
     "Wrzeciono",
     "Ustawienia",
-    "Gwintowanie",
-    "Os X",
+    "ELS gwint",
+    "Os X dosuw",
     "Bazowanie osi",
-    "Informacje",
+    "Podswietlenie",
+    // SCREEN_MENU (ostatni) nie pojawia sie na liscie – sluzy jako sentinel
 };
 
 // Order of screens presented in the menu (maps to screen_id_t)
 static const screen_id_t MENU_ORDER[] = {
     SCREEN_MAIN, SCREEN_JOG, SCREEN_FEED, SCREEN_SPINDLE,
-    SCREEN_SETTINGS, SCREEN_ELS, SCREEN_AXIS_X, SCREEN_HOMING, SCREEN_MENU};
+    SCREEN_SETTINGS, SCREEN_ELS, SCREEN_AXIS_X,
+    SCREEN_HOMING, SCREEN_BACKLIGHT, SCREEN_MENU};
 
 // ------------------------------------------------------------
 //  Helpers
@@ -290,36 +293,65 @@ static void handle_main(encoder_event_t evt)
 // ------------------------------------------------------------
 static void draw_menu(void)
 {
-    draw_header("WYBIERZ TRYB", COL_HDR_MENU);
+    draw_header("MENU", COL_HDR_MENU);
     display_fill_rect(0, HEADER_H, SCR_W, CONTENT_H + 2, COLOR_BLACK);
-    int menu_count = sizeof(MENU_ORDER) / sizeof(MENU_ORDER[0]);
-    int rows = (FOOTER_Y - CONTENT_Y) / ROW_H; // rows per column
-    int cols = 2;
-    int col_w = SCR_W / cols;
-    // Render two columns so all menu items fit on one screen
-    for (int i = 0; i < menu_count; i++)
-    {
-        int row = i % rows;
-        int col = i / rows; // 0 = left, 1 = right
-        int16_t y = CONTENT_Y + row * ROW_H;
-        int16_t x = col * col_w + 2;
-        bool sel = (i == ui.menu_sel);
-        uint16_t bg = sel ? COL_SEL : COLOR_BLACK;
-        display_fill_rect(x, y + UI_ROW_GAP, col_w - 4, ROW_H - (2 * UI_ROW_GAP), bg);
-        if (sel)
-            display_draw_string(x, y + UI_TEXT_Y, ">", COLOR_WHITE, bg, 1);
-        display_draw_string(x + 12, y + UI_TEXT_Y, MENU_NAMES[i],
-                            sel ? COLOR_WHITE : COL_LABEL, bg, 1);
+
+    int menu_count = (int)(sizeof(MENU_ORDER) / sizeof(MENU_ORDER[0])) - 1; // -1 bo ostatni to SCREEN_MENU (powrót)
+    // Wiersz zaznaczony: FONT_MD (wyższy), pozostałe: FONT_SM
+    const int ROW_SM = ROW_H;
+    const int ROW_MD = ROW_H + ROW_H / 2;
+    // Szacowana liczba widocznych wierszy SM
+    const int vis_est = CONTENT_H / ROW_SM;
+
+    // Okno przewijania: zaznaczona pozycja zawsze widoczna
+    int sel = ui.menu_sel;
+    int win = sel - vis_est / 2;
+    if (win < 0) win = 0;
+    if (win + vis_est > menu_count) win = menu_count - vis_est;
+    if (win < 0) win = 0;
+
+    int16_t y = CONTENT_Y + 1;
+    for (int i = win; i < menu_count; i++) {
+        bool issel = (i == sel);
+        int rh = issel ? ROW_MD : ROW_SM;
+        if (y + rh > FOOTER_Y - 1) break;
+
+        if (issel) {
+            display_fill_rect(0, y, SCR_W, rh, COL_SEL);
+            display_string(UI_PAD_X, y + (rh - FONT_MD_H) / 2,
+                                MENU_NAMES[i], FONT_MD, COLOR_WHITE, 0xFFFF);
+            // Numer pozycji w prawym rogu
+            char ibuf[8];
+            snprintf(ibuf, sizeof(ibuf), "%d/%d", i + 1, menu_count);
+            int ix = SCR_W - display_text_width(ibuf, FONT_SM) - UI_PAD_X;
+            display_string(ix, y + (rh - FONT_SM_H) / 2,
+                                ibuf, FONT_SM, COL_CYAN, 0xFFFF);
+        } else {
+            display_string(UI_PAD_X + 4, y + (ROW_SM - FONT_SM_H) / 2,
+                                MENU_NAMES[i], FONT_SM, COL_LABEL, COLOR_BLACK);
+        }
+        y += rh;
+        if (i < menu_count - 1 && y < FOOTER_Y - 1)
+            display_hline(0, y, SCR_W, rgb565(30, 30, 30));
     }
+
+    // Strzałki przewijania
+    if (win > 0)
+        display_string(SCR_W / 2 - 4, CONTENT_Y + 1,
+                            "^", FONT_SM, rgb565(80, 80, 80), 0xFFFF);
+    if (win + vis_est < menu_count)
+        display_string(SCR_W / 2 - 4, FOOTER_Y - FONT_SM_H - 2,
+                            "v", FONT_SM, rgb565(80, 80, 80), 0xFFFF);
+
     draw_footer();
     display_flush();
 }
 
+static void backlight_screen_enter(void); // forward decl – def. w screen_backlight.inc
 static void handle_menu(encoder_event_t evt)
 {
-    int menu_count = sizeof(MENU_ORDER) / sizeof(MENU_ORDER[0]);
-    switch (evt)
-    {
+    int menu_count = (int)(sizeof(MENU_ORDER) / sizeof(MENU_ORDER[0])) - 1;
+    switch (evt) {
     case ENCODER_EVT_CW:
         ui.menu_sel = (ui.menu_sel + 1) % menu_count;
         break;
@@ -327,9 +359,12 @@ static void handle_menu(encoder_event_t evt)
         ui.menu_sel = (ui.menu_sel == 0) ? (menu_count - 1) : (ui.menu_sel - 1);
         break;
     case ENCODER_EVT_SW_PRESS:
-    case ENCODER_EVT_BTN3_PRESS:
-        ui_menu_goto(MENU_ORDER[ui.menu_sel]);
+    case ENCODER_EVT_BTN3_PRESS: {
+        screen_id_t dst = MENU_ORDER[ui.menu_sel];
+        if (dst == SCREEN_BACKLIGHT) backlight_screen_enter();
+        ui_menu_goto(dst);
         break;
+    }
     case ENCODER_EVT_SW_LONG:
     case ENCODER_EVT_BTN2_PRESS:
         ui_menu_goto(SCREEN_MAIN);
@@ -338,6 +373,8 @@ static void handle_menu(encoder_event_t evt)
         break;
     }
 }
+
+
 
 // ------------------------------------------------------------
 //  EKRAN: JOG
@@ -729,6 +766,8 @@ static void handle_settings(encoder_event_t evt)
 // ------------------------------------------------------------
 #include "screen_axis_x.inc"
 
+#include "screen_backlight.inc"
+
 // ------------------------------------------------------------
 //  Tablica ekranów
 // ------------------------------------------------------------
@@ -737,10 +776,10 @@ typedef void (*handle_fn_t)(encoder_event_t);
 
 static const draw_fn_t s_draw[] = {
     draw_main, draw_menu, draw_jog, draw_feed, draw_spindle,
-    draw_settings, draw_els, draw_axis_x, draw_homing};
+    draw_settings, draw_els, draw_axis_x, draw_homing, draw_backlight};
 static const handle_fn_t s_handle[] = {
     handle_main, handle_menu, handle_jog, handle_feed, handle_spindle,
-    handle_settings, handle_els, handle_axis_x, handle_homing};
+    handle_settings, handle_els, handle_axis_x, handle_homing, handle_backlight};
 
 // ------------------------------------------------------------
 //  E-STOP callback z ISR spindle
@@ -830,4 +869,5 @@ void ui_menu_notify(const char *msg, uint16_t color, uint32_t ms)
     ui.notify_color = color;
     ui.notify_until_ms = ui.uptime_ms + (int32_t)ms;
     ui.needs_redraw = true;
+
 }

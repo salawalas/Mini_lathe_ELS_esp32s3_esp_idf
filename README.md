@@ -40,6 +40,9 @@ i glowica podzialowa VEVOR BS4-KP100-57.
 
 ### SPI2 - magistrala wspoldzielona (TFT + karta SD)
 
+Oo moje ustawienia TFT.
+Ustawienia wyświetlacza TFT można zmienić w idf.py menuconfig.
+
 | Sygnal | GPIO | Kierunek | Uwagi |
 |---|---|---|---|
 | MOSI | **11** | OUT | TFT (SDA) + SD (CMD) |

@@ -64,7 +64,7 @@ static void cycle_zx_task(void *arg)
 
 static void draw_axis_x(void)
 {
-    draw_header("OS X – DOSUW", RGB565(0,100,80));
+    draw_header("OS X – DOSUW", rgb565(0,100,80));
     display_fill_rect(0, HEADER_H, SCR_W, CONTENT_H+2, COLOR_BLACK);
     char buf[24]; int16_t y=CONTENT_Y+2;
 

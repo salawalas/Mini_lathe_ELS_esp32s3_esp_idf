@@ -27,8 +27,6 @@
 #define COLOR_ORANGE     COL_ORANGE
 #define COLOR_DARK_GREY  COL_DARK_GREY
 #define COLOR_LIGHT_GREY COL_LIGHT_GREY
-#define RGB565(r,g,b)    rgb565(r,g,b)
-
 #define DISPLAY_WIDTH    DISP_W
 #define DISPLAY_HEIGHT   DISP_H
 

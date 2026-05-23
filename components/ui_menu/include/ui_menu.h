@@ -5,7 +5,8 @@
 typedef enum {
     SCREEN_MAIN=0, SCREEN_MENU, SCREEN_JOG, SCREEN_FEED,
     SCREEN_SPINDLE, SCREEN_SETTINGS, SCREEN_ELS, SCREEN_AXIS_X,
-    SCREEN_HOMING,      // Nowy ekran – Bazowanie osi
+    SCREEN_HOMING,      // Bazowanie osi
+    SCREEN_BACKLIGHT,   // Podsiwetlenie
     SCREEN_COUNT
 } screen_id_t;
 

@@ -12,7 +12,7 @@ static struct {
 static void draw_els(void)
 {
     els_status_t st; els_get_status(&st);
-    uint16_t hdr = els_is_running() ? RGB565(160,0,80) : RGB565(80,0,120);
+    uint16_t hdr = els_is_running() ? rgb565(160,0,80) : rgb565(80,0,120);
     draw_header("ELS GWINTOWANIE", hdr);
     display_fill_rect(0, HEADER_H, SCR_W, CONTENT_H+2, COLOR_BLACK);
     char buf[24]; int16_t y=CONTENT_Y+2;
@@ -35,8 +35,8 @@ static void draw_els(void)
         display_draw_string(4,y,"BTN1=STOP ELS",COL_WARN,COLOR_BLACK,1);
 
     } else if (els_ui.confirm_mode) {
-        display_fill_rect(0,y,SCR_W,12,RGB565(80,0,0));
-        display_draw_string(4,y+2,"POTWIERDZ START",COLOR_WHITE,RGB565(80,0,0),1); y+=ROW_H;
+        display_fill_rect(0,y,SCR_W,12,rgb565(80,0,0));
+        display_draw_string(4,y+2,"POTWIERDZ START",COLOR_WHITE,rgb565(80,0,0),1); y+=ROW_H;
         const thread_preset_t *p=&ELS_THREAD_PRESETS[els_ui.preset_idx];
         float pitch=(p->type==THREAD_IMPERIAL)?els_tpi_to_mm(p->pitch):p->pitch;
         snprintf(buf,sizeof(buf),"Gwint: %s",p->label);
@@ -47,8 +47,8 @@ static void draw_els(void)
         display_draw_string(4,y,buf,COL_VAL,COLOR_BLACK,1); y+=ROW_H;
         snprintf(buf,sizeof(buf),"Przejsc: %d",els_ui.passes);
         display_draw_string(4,y,buf,COL_VAL,COLOR_BLACK,1); y+=ROW_H;
-        display_fill_rect(0,y,SCR_W,13,RGB565(0,60,0));
-        display_draw_string(4,y+2,"SW=START  BTN2=ANULUJ",COLOR_WHITE,RGB565(0,60,0),1);
+        display_fill_rect(0,y,SCR_W,13, rgb565(0,60,0));
+        display_draw_string(4,y+2,"SW=START  BTN2=ANULUJ",COLOR_WHITE, rgb565(0,60,0), 1);
 
     } else {
         const thread_preset_t *p=&ELS_THREAD_PRESETS[els_ui.preset_idx];
