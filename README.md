@@ -1,5 +1,14 @@
 # Mini Lathe Controller v6
 
+## Third-party components
+
+This project uses code based on:
+
+- [nopnop2002/esp-idf-ili9340](https://github.com/nopnop2002/esp-idf-ili9340)
+
+Thanks to the original author.
+
+
 Sterownik mini-tokarki CNC z jarzmem K11-3
 i glowica podzialowa VEVOR BS4-KP100-57.
 
