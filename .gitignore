@@ -2,6 +2,7 @@
 *.bin
 *.elf
 *.log
+*.raw
 build/
 managed_components/
 CMakeFiles/
@@ -12,6 +13,7 @@ __pycache__/
 .vscode/
 Chat_exports/
 Sessions_export/
+*.json
 *.png
 *.jpg
 *.bmp
@@ -19,6 +21,7 @@ Sessions_export/
 *.rar
 *.tar.gz
 *.exe
+chat_export*.md
 sdkconfig
 sdkconfig.old
 dependencies.lock
