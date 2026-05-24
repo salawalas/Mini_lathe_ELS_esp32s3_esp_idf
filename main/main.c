@@ -62,12 +62,12 @@ static void show_logo_screen(void)
             if (lw > 0 && lw <= DISP_W && lh > 0 && lh <= DISP_H)
             {
                 int px = (int)lw * (int)lh;
-                uint16_t *buf = heap_caps_malloc(px * 2,
-                                                 MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+                uint16_t *buf = heap_caps_malloc(px * 2, MALLOC_CAP_8BIT);
                 if (buf && (int)fread(buf, 2, px, f) == px)
                 {
+                    int usable_h = DISP_H - 24; // zostaw miejsce na pasek LATHE_NAME
                     int logo_x = (DISP_W - (int)lw) / 2;
-                    int logo_y = (DISP_H - (int)lh) / 2 - 12;
+                    int logo_y = (usable_h - (int)lh) / 2;
                     if (logo_y < 0)
                         logo_y = 0;
                     display_draw_bitmap(logo_x, logo_y, lw, lh, buf);
