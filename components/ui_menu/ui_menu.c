@@ -85,6 +85,7 @@ static struct
     uint16_t spindle_rpm;
     spindle_dir_t spindle_dir;
     uint8_t settings_sel, menu_sel;
+    uint8_t menu_win;
     uint8_t menu_top;
 } ui = {
     .current = SCREEN_MAIN,
@@ -143,8 +144,11 @@ static void draw_footer(void)
     display_draw_hline(0, FOOTER_Y - 1, SCR_W, COLOR_LIGHT_GREY);
     // Krzyżyk ostrzegawczy – brak bazowania osi
     if (!g_homed) {
-        display_string(SCR_W - 18, FOOTER_Y + UI_FOOTER_TEXT_Y,
-                       "X", FONT_SM, rgb565(255, 40, 40), 0xFFFF);
+        // Czerwony X nad stopką – FONT_MD (24px) wycentrowany pionowo nad FOOTER
+        int hx = FOOTER_Y - FONT_MD_H - 1;
+        display_fill_rect(SCR_W - FONT_MD_W - 2, hx, FONT_MD_W + 2, FONT_MD_H, rgb565(120, 0, 0));
+        display_string(SCR_W - FONT_MD_W - 1, hx,
+                       "X", FONT_MD, rgb565(255, 60, 60), 0xFFFF);
     }
     const char *hints[] = {
         "SW=menu",
@@ -198,8 +202,8 @@ static void draw_main(void)
     display_draw_string(4, y, "RPM:", COL_LABEL, COLOR_BLACK, 1);
     snprintf(buf, sizeof(buf), "%3d/%3d", sp.rpm_actual, sp.rpm_target);
     display_draw_string(UI_PAD_X + 32, y, buf, sp.at_speed ? COL_OK : COL_WARN, COLOR_BLACK, 1);
-    snprintf(buf, sizeof(buf), "PWR:%s", sp.power_enabled ? "ON" : "OFF");
-    display_draw_string(COL_RIGHT_1, y, buf, sp.power_enabled ? COL_OK : COL_LABEL, COLOR_BLACK, 1);
+    snprintf(buf, sizeof(buf), "%s", sp.power_enabled ? "ON" : "OF");
+    display_draw_string(SCR_W - 20, y, buf, sp.power_enabled ? COL_OK : COL_LABEL, COLOR_BLACK, 1);
     y += ROW_H;
 
     // Pozycja Z + status homingu
@@ -207,8 +211,8 @@ static void draw_main(void)
     int pi = (int)pos_mm, pd = (int)(fabsf(pos_mm - (float)pi) * 100.0f);
     snprintf(buf, sizeof(buf), "%4d.%02d mm", pi, pd);
     display_draw_string(UI_PAD_X + 14, y, buf, limits_axis_homed(AXIS_Z) ? COL_VAL : COL_WARN, COLOR_BLACK, 1);
-    const char *fs[] = {"IDLE", "RUN ", "ACC ", "DEC ", "ERR "};
-    display_draw_string(COL_RIGHT_1, y, fs[stepper_get_state()],
+    const char *fs[] = {"IDL", "RUN", "ACC", "DEC", "ERR"};
+    display_draw_string(SCR_W - 28, y, fs[stepper_get_state()],
                         (stepper_get_state() == STEPPER_STATE_IDLE) ? COL_LABEL : COL_WARN, COLOR_BLACK, 1);
     // Znacznik homingu
     snprintf(buf, sizeof(buf), "%s", limits_axis_homed(AXIS_Z) ? "[OK]" : "[--]");
@@ -296,20 +300,32 @@ static void draw_menu(void)
     draw_header("MENU", COL_HDR_MENU);
     display_fill_rect(0, HEADER_H, SCR_W, CONTENT_H + 2, COLOR_BLACK);
 
-    int menu_count = (int)(sizeof(MENU_ORDER) / sizeof(MENU_ORDER[0])) - 1; // -1 bo ostatni to SCREEN_MENU (powrót)
-    // Wiersz zaznaczony: FONT_MD (wyższy), pozostałe: FONT_SM
+    int menu_count = (int)(sizeof(MENU_ORDER) / sizeof(MENU_ORDER[0])) - 1;
     const int ROW_SM = ROW_H;
     const int ROW_MD = ROW_H + ROW_H / 2;
-    // Szacowana liczba widocznych wierszy SM
-    const int vis_est = CONTENT_H / ROW_SM;
 
-    // Okno przewijania: zaznaczona pozycja zawsze widoczna
+    // Oblicz okno: przesuń minimalnie żeby sel był zawsze widoczny
     int sel = ui.menu_sel;
-    int win = sel - vis_est / 2;
-    if (win < 0) win = 0;
-    if (win + vis_est > menu_count) win = menu_count - vis_est;
-    if (win < 0) win = 0;
+    int win = ui.menu_win;
+    // Przesuń w górę jeśli sel wyszedł powyżej okna
+    if (sel < win) win = sel;
+    // Przesuń w dół jeśli sel nie mieści się w aktualnym oknie
+    bool sel_visible;
+    do {
+        sel_visible = false;
+        int16_t y = CONTENT_Y + 1;
+        for (int i = win; i < menu_count; i++) {
+            int rh = (i == sel) ? ROW_MD : ROW_SM;
+            if (y + rh > FOOTER_Y - 1) break;
+            if (i == sel) { sel_visible = true; break; }
+            y += rh;
+        }
+        if (!sel_visible && win < menu_count - 1) win++;
+        else break;
+    } while (win < menu_count - 1);
+    ui.menu_win = win;
 
+    // Rysuj pozycje
     int16_t y = CONTENT_Y + 1;
     for (int i = win; i < menu_count; i++) {
         bool issel = (i == sel);
@@ -319,16 +335,15 @@ static void draw_menu(void)
         if (issel) {
             display_fill_rect(0, y, SCR_W, rh, COL_SEL);
             display_string(UI_PAD_X, y + (rh - FONT_MD_H) / 2,
-                                MENU_NAMES[i], FONT_MD, COLOR_WHITE, 0xFFFF);
-            // Numer pozycji w prawym rogu
+                           MENU_NAMES[i], FONT_MD, COLOR_WHITE, 0xFFFF);
             char ibuf[8];
             snprintf(ibuf, sizeof(ibuf), "%d/%d", i + 1, menu_count);
             int ix = SCR_W - display_text_width(ibuf, FONT_SM) - UI_PAD_X;
             display_string(ix, y + (rh - FONT_SM_H) / 2,
-                                ibuf, FONT_SM, COL_CYAN, 0xFFFF);
+                           ibuf, FONT_SM, COL_CYAN, 0xFFFF);
         } else {
             display_string(UI_PAD_X + 4, y + (ROW_SM - FONT_SM_H) / 2,
-                                MENU_NAMES[i], FONT_SM, COL_LABEL, COLOR_BLACK);
+                           MENU_NAMES[i], FONT_SM, COL_LABEL, COLOR_BLACK);
         }
         y += rh;
         if (i < menu_count - 1 && y < FOOTER_Y - 1)
@@ -338,16 +353,17 @@ static void draw_menu(void)
     // Strzałki przewijania
     if (win > 0)
         display_string(SCR_W / 2 - 4, CONTENT_Y + 1,
-                            "^", FONT_SM, rgb565(80, 80, 80), 0xFFFF);
-    if (win + vis_est < menu_count)
+                       "^", FONT_SM, rgb565(80, 80, 80), 0xFFFF);
+    if (!sel_visible || win + 6 < menu_count)
         display_string(SCR_W / 2 - 4, FOOTER_Y - FONT_SM_H - 2,
-                            "v", FONT_SM, rgb565(80, 80, 80), 0xFFFF);
+                       "v", FONT_SM, rgb565(80, 80, 80), 0xFFFF);
 
     draw_footer();
     display_flush();
 }
 
-static void backlight_screen_enter(void); // forward decl – def. w screen_backlight.inc
+
+static void backlight_screen_enter(void); // forward decl
 static void handle_menu(encoder_event_t evt)
 {
     int menu_count = (int)(sizeof(MENU_ORDER) / sizeof(MENU_ORDER[0])) - 1;
@@ -373,8 +389,6 @@ static void handle_menu(encoder_event_t evt)
         break;
     }
 }
-
-
 
 // ------------------------------------------------------------
 //  EKRAN: JOG

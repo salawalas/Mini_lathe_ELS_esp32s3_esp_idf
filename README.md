@@ -14,7 +14,7 @@ i glowica podzialowa VEVOR BS4-KP100-57.
 
 **Mikrokontroler**: ESP32-S3-WROOM-1 N16R8 (DevKitC-1)
 **Framework**: ESP-IDF v5.5.1
-**Display**: TFT SPI ST7735 / ILI9340 / ST7796 (modulowa obsluga przez menuconfig)
+**Display**: TFT SPI ST7735 / ILI9340 / ILI9341 / ST7789 / ST7796 (modulowa obsluga przez menuconfig)
 **Komunikacja**: USB JTAG/Serial, karta SD (FATFS przez SPI2), SPIFFS na fonty i bitmapy
 
 ---
@@ -24,13 +24,13 @@ i glowica podzialowa VEVOR BS4-KP100-57.
 | Komponent | Model / parametry |
 |---|---|
 | Mikrokontroler | ESP32-S3-WROOM-1 N16R8, 16 MB Flash, 8 MB PSRAM |
-| Wyswietlacz | ST7735 160x128 / ILI9340 320x240 / ST7796 480x320 |
+| Wyswietlacz | ST7735 160x128 / ILI9340 320x240 / ILI9341 / ST7789 / ST7796 480x320 |
 | Silnik wrzeciona | NEMA23 57HD3403-16B, 3.75V, 2.5A/faze |
 | Silnik posuwu Z | NEMA23 57HD3403-16B, 3.75V, 2.5A/faze |
 | Silnik dosuwu X | NEMA23 57HD3403-16B, 3.75V, 2.5A/faze |
 | Sterowniki | 3x DM556 (20-50V DC, do 5.6A, mikrostepping 12800 kr/obr) |
 | Przekladnia wrzeciona | Glowica VEVOR BS4-KP100-57, slimakowa 1:6 |
-| Zasilacz | 36V / 5.6A / 350VA SWPS | Active PFC Mean Well
+| Zasilacz | 36V / 5.6A / 350VA SWPS | Active PFC Mean Well |
 | Bezpieczenstwo | Modul MOSFET PWM (5-55V, do 100A) odcina zasilanie DM556; E-STOP grzybkowy |
 | SD card | FAT32 przez SPI2 (MOSI/SCLK/MISO wspoldzielone z TFT) |
 
@@ -40,8 +40,7 @@ i glowica podzialowa VEVOR BS4-KP100-57.
 
 ### SPI2 - magistrala wspoldzielona (TFT + karta SD)
 
-Oo moje ustawienia TFT.
-Ustawienia wyświetlacza TFT można zmienić w idf.py menuconfig.
+Ustawienia wyswietlacza TFT mozna zmienic w `idf.py menuconfig`.
 
 | Sygnal | GPIO | Kierunek | Uwagi |
 |---|---|---|---|
@@ -139,7 +138,7 @@ Ustawienia wyświetlacza TFT można zmienić w idf.py menuconfig.
 | Skok sruby | 2.0 mm | 1.25 mm |
 | Mikrostepping | 12800 kr/obr | 12800 kr/obr |
 | Krokow/mm | 6400 kr/mm | 10240 kr/mm |
-| Predkosc max | ~700 mm/min | ~120 mm/min |
+| Predkosc max | ~420 mm/min | ~120 mm/min |
 
 > **Przed pierwszym ruchem** - zweryfikuj skok sruby i zaktualizuj `AXIS_Z_LEAD_MM` / `AXIS_X_LEAD_MM` w `components/axis/include/axis.h`.
 
@@ -151,27 +150,30 @@ Ustawienia wyświetlacza TFT można zmienić w idf.py menuconfig.
 mini_lathe_v6/
 ├── CMakeLists.txt                # SPIFFS build (fonty + bitmapy)
 ├── partitions.csv                # 16 MB flash: factory + spiffs
-├── sdkconfig.defaults            # piny, model TFT, wymiary
+├── sdkconfig.defaults            # piny, model TFT, wymiary, QIO 80MHz, PSRAM, USB JTAG
 ├── README.md
 ├── main/
 │   ├── CMakeLists.txt
-│   ├── main.c                    # init, splash, bitmap demo
+│   ├── main.c                    # init, logo+splash+homing warning, peryferia, ELS, UI, SD
 │   └── idf_component.yml         # nopnop2002/ili9340
 ├── managed_components/
 │   └── nopnop2002__ili9340/      # driver TFT + FONTX
 ├── components/
 │   ├── display/                  # wrapper TFT, 7 fontow, SPIFFS, bitmapy
-│   │   ├── font/                 # 7x FNT + logo.raw
+│   │   ├── font/                 # 8 plikow (7x FNT + logo.raw)
 │   │   └── include/
-│   ├── encoder/                  # PCNT kwadraturowy + GPIO ISR
+│   ├── encoder/                  # PCNT kwadraturowy + GPIO ISR (4 przyciski)
 │   ├── axis/                     # generyczna os (Z i X), GPTimer, rampa
-│   ├── stepper/                  # kompat. wsteczna os Z
+    │   ├── stepper/                  # kompat. wsteczna dla osi Z (wrapper na axis)
 │   ├── spindle/                  # wrzeciono krokowe + MOSFET + E-STOP ISR
 │   ├── motion/                   # ELS (Electronic Leadscrew), 19 presetow
 │   ├── limits/                   # krancowki + homing
 │   ├── gcode/                    # parser G-code
 │   ├── sdcard/                   # karta SD FATFS przez SPI2
-│   └── ui_menu/                  # 8 ekranow UI, nawigacja enkoderem
+│   └── ui_menu/                  # 10 ekranow UI, nawigacja enkoderem
+│       ├── homing_state.c/.h     # globalny stan bazowania (g_homed)
+│       ├── screen_homing.inc     # ekran bazowania osi
+│       └── screen_backlight.inc  # ekran regulacji podswietlenia
 └── tools/
     ├── generate_logo.py          # generuje testowe logo 48x48
     └── png_to_raw.py             # konwertuje PNG -> raw RGB565
@@ -181,18 +183,26 @@ mini_lathe_v6/
 
 | # | Ekran | Dostep | Funkcja |
 |---|-------|--------|---------|
-| 1 | Dashboard | start | Live: RPM, Z pos, X pos, stany osi |
-| 2 | Menu | SW krotko | Lista trybow |
-| 3 | JOG Z | Menu | Enkoder = krok osi Z |
-| 4 | Posuw AUTO | Menu | Ciagly posuw osi Z |
-| 5 | Wrzeciono | Menu | Start/stop, RPM, kierunek |
-| 6 | Ustawienia | Menu | Skok sruby, mikrostepping |
-| 7 | ELS | Menu | Gwintowanie, 19 presetow srubowych/calowych |
-| 8 | Os X | Menu | JOG X, AUTO X, cykl ZX |
+|   | Menu | SW krotko | Lista trybow |
+| 1 | Dashboard | start | Live: RPM, Z pos, X pos, stany osi, status bazowania |
+| 2 | JOG Z | Menu | Enkoder = krok osi Z |
+| 3 | Posuw AUTO | Menu | Ciagly posuw osi Z |
+| 4 | Wrzeciono | Menu | Start/stop, RPM, kierunek |
+| 5 | Ustawienia | Menu | Skok sruby, mikrostepping |
+| 6 | ELS | Menu | Gwintowanie, 19 presetow srubowych/calowych |
+| 7 | Os X | Menu | JOG X, AUTO X, cykl ZX |
+| 8 | Bazowanie osi | Menu | Homing Z i X, podejscie do krancowek |
+| 9 | Podswietlenie | Menu | Regulacja jasnosci TFT (0-100%) |
 
 ---
 
 ## Funkcjonalnosci
+
+### Sekwencja startowa
+1. **Logo** — pelnoekranowa bitmapa (jesli `/spiffs/logo.raw` istnieje) lub tekst "Mini Lathe v6.1" — 5s
+2. **Splash** — czarny ekran z niebieskim paskiem: ESP32-S3 / IDF 5.5 / 3x DM556+NEMA23 / ELS+E-STOP — 5s
+3. **Ostrzezenie o braku bazowania** — migajacy czerwony ekran "! UWAGA ! Brak bazowania osi!" — 5s
+4. Inicjalizacja: NVS → enkoder → osie Z/X → wrzeciono → ELS → UI (dashboard) → SD card (nieblokujaco)
 
 ### Wrzeciono
 - Naped krokowy przez przekladnie slimakowa 1:6
@@ -202,9 +212,9 @@ mini_lathe_v6/
 - Tryb awaryjny: MOSFET odcina 36V fizycznie
 
 ### ELS (Electronic Leadscrew)
-- **19 presetow gwintow** - metryczne (M3-M12) i calowe (1/4"-1")
-- Synchronizacja enkoder wrzeciona -> posuw Z przez Bresenham
-- Wieloprzejscia (1-20 przejsc)
+- **19 presetow gwintow** — metryczne (M3-M12, M14, M16, M20, M24), Trapezowe (Tr10-Tr16) i calowe (1/4"-1/2")
+- Synchronizacja enkoder wrzeciona -> posuw Z przez Bresenham (ISR-safe task)
+- Wieloprzejscia (1-20 przejsc) z automatycznym dosuwem X
 - Pomiar Z_start / Z_end z enkodera
 - Zatrzymanie awaryjne: BTN1 LONG = E-STOP
 
@@ -212,13 +222,14 @@ mini_lathe_v6/
 - GPTimer z rampa akceleracji/deceleracji (20000 steps/s^2)
 - JOG krokowy (0.01 / 0.1 / 1.0 mm) i posuw ciagly
 - Move do pozycji absolutnej
-- Krancowki + homing (do aktywacji)
+- Krancowki + pelny homing UI (Menu > Bazowanie osi)
+- Blokada ruchu przed zhomowaniem — dozwolony tylko kierunek do krancowki home
 
 ### Bezpieczenstwo
 - **E-STOP**: styk NC grzybka odcina 36V sprzetowo; styk NO -> GPIO18 -> ISR wylacza MOSFET + zatrzymuje timery. Reset przez przycisk.
 - **MOSFET PWM**: odcina zasilanie DM556 programowo (IO17)
 - **Watchdog**: ESP32 task WDT 10s
-- **Krancowki**: blokada ruchu w kierunku aktywnego limitu
+- **Krancowki**: blokada ruchu w kierunku aktywnego limitu; ISR natychmiastowe zatrzymanie osi
 
 ### Karta SD
 - FAT32 przez SPI2 (wspoldzielona magistrala z TFT)
@@ -228,14 +239,16 @@ mini_lathe_v6/
 
 ### Wyswietlacz
 - Obsluga wielu modeli TFT (menuconfig): ST7735, ILI9340, ILI9341, ST7789, ST7796
-- 7 fontow FONTX: 3x Gothic (8/12/16px) + 3x Mincho (8/12/16px) + 1x Latin
-- SPIFFS 14.5 MB na fonty i bitmapy
+- 7 fontow FONTX: 3x Gothic (16/24/32 px) + 3x Mincho (16/24/32 px) + 1x Latin (32 px)
+- SPIFFS ~14.5 MB na fonty i bitmapy
 - Rysowanie bitmap w formacie raw RGB565 (z RAM i z SPIFFS)
 - Framebuffer (opcjonalnie, przez menuconfig)
+- Regulacja podswietlenia PWM (ekran Podswietlenie)
 
 ### G-code
-- Parser G-code (G0, G1, G90, G91, M3, M5 itp.)
+- Parser G-code (G0, G1, G4, G20, G21, G90, G91, G92, M3, M4, M5, M30 itp.)
 - Wykonywanie z karty SD
+- MDI (exec pojedynczej linii)
 
 ---
 
@@ -251,9 +264,11 @@ idf.py build
 # Flashowanie (firmware + partycje + SPIFFS z fontami/bitmapami)
 idf.py -p COMxx flash
 
-# Monitor szeregowy
+# Monitor szeregowy (USB JTAG/Serial)
 idf.py -p COMxx monitor
 ```
+
+`sdkconfig.defaults` zawiera prekonfiguracje dla ESP32-S3: QIO 80MHz, 16MB flash, 8MB PSRAM, USB JTAG console, task WDT 10s, SPIFFS partition table.
 
 ---
 
@@ -297,7 +312,7 @@ Pliki `.raw` wrzucone do `components/display/font/` sa automatycznie pakowane do
 - **Wiekszy wyswietlacz** - zmien model TFT w `menuconfig`, reszta kodu dziala automatycznie (adaptacyjne layouty UI)
 - **Dodatkowe bitmapy** - wrzuc `.raw` do `components/display/font/` lub na karte SD
 - **Nowe fonty** - dowolny FONTX, dodaj do katalogu, zaktualizuj `FONT_PATHS[]`, `g_font[]` i definicje w `display.h`
-- **Nowe ekrany UI** - dodaj `screen_xxx.inc`, zarejestruj w `ui_menu.c`
+- **Nowe ekrany UI** - dodaj `screen_xxx.inc`, zarejestruj w `ui_menu.c` i `screen_id_t`
 - **Nowe presety ELS** - rozszerz tablice `ELS_THREAD_PRESETS` w `components/motion/motion.c`
 - **Bluetooth / WiFi** - ESP32-S3 ma wbudowane BLE + WiFi
 - **Joystick / pedal** - dodaj jako kolejny przycisk w `encoder.c`

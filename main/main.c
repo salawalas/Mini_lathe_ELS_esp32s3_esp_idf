@@ -21,6 +21,7 @@
 #include "sdcard.h"
 #include <sys/stat.h>
 #include "homing_state.h"
+#include <stdio.h>
 
 static const char *TAG = "MAIN";
 
@@ -43,48 +44,72 @@ static const char *TAG = "MAIN";
 static void show_logo_screen(void)
 {
     display_clear(rgb565(0, 40, 120));
+    bool logo_shown = false;
 
+    ESP_LOGI("MAIN", "Szukam /spiffs/logo.raw...");
     struct stat st;
     if (stat("/spiffs/logo.raw", &st) == 0 && st.st_size > 4)
     {
-        // Akceptuj plik z nagłówkiem (uint16_t w, uint16_t h) dowolnego rozmiaru
-        // Wyśrodkuj na ekranie
         FILE *f = fopen("/spiffs/logo.raw", "rb");
         if (f)
         {
             uint16_t lw = 0, lh = 0;
-            if (fread(&lw, 2, 1, f) == 1 && fread(&lh, 2, 1, f) == 1 && lw > 0 && lw <= DISP_W && lh > 0 && lh <= DISP_H)
+            fread(&lw, 2, 1, f);
+            fread(&lh, 2, 1, f);
+            ESP_LOGI("MAIN", "logo.raw: %d x %d px (%ld B)",
+                     (int)lw, (int)lh, (long)st.st_size);
+
+            if (lw > 0 && lw <= DISP_W && lh > 0 && lh <= DISP_H)
             {
-                int logo_x = (DISP_W - lw) / 2;
-                int logo_y = (DISP_H - lh) / 2 - 12; // lekko wyżej, zostawia miejsce na pasek
-                int px = lw * lh;
-                uint16_t *buf = heap_caps_malloc(px * 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-                if (buf && fread(buf, 2, px, f) == px)
+                int px = (int)lw * (int)lh;
+                uint16_t *buf = heap_caps_malloc(px * 2,
+                                                 MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+                if (buf && (int)fread(buf, 2, px, f) == px)
+                {
+                    int logo_x = (DISP_W - (int)lw) / 2;
+                    int logo_y = (DISP_H - (int)lh) / 2 - 12;
+                    if (logo_y < 0)
+                        logo_y = 0;
                     display_draw_bitmap(logo_x, logo_y, lw, lh, buf);
+                    logo_shown = true;
+                    ESP_LOGI("MAIN", "Logo wyswietlone @ %d,%d", logo_x, logo_y);
+                }
+                else
+                {
+                    ESP_LOGE("MAIN", "Blad odczytu logo lub malloc fail");
+                }
                 if (buf)
                     free(buf);
             }
+            else
+            {
+                ESP_LOGW("MAIN", "logo.raw: nieprawidlowe wymiary %dx%d", lw, lh);
+            }
             fclose(f);
         }
-    }
-    else
-    {
-        // Fallback tekstowy
+        }
+        else
+        {
+            ESP_LOGW("MAIN", "logo.raw nie znaleziony lub za maly");
+        }
+
+        if (!logo_shown)
+        {
         int mid_y = DISP_H / 2;
-        display_string(DISP_W / 2 - 56, mid_y - 48,
+        int _w = display_text_width("Mini Lathe", FONT_LG);
+        display_string((DISP_W - _w) / 2, mid_y - 32,
                        "Mini Lathe", FONT_LG, COL_WHITE, 0xFFFF);
-        display_string(DISP_W / 2 - 20, mid_y,
+        int _vw = display_text_width(LATHE_VERSION, FONT_LG);
+        display_string((DISP_W - _vw) / 2, mid_y + 4,
                        LATHE_VERSION, FONT_LG, COL_WHITE, 0xFFFF);
-        display_string(DISP_W / 2 - 64, mid_y + 48,
-                       "ESP32-S3", FONT_MD, rgb565(160, 210, 255), 0xFFFF);
-        uint8_t title_font = (DISP_W >= 240) ? FONT_LG : FONT_SM;
-        int title_x = (DISP_W - display_text_width("Mini Lathe", title_font)) / 2;
-        display_string(title_x, mid_y - 32, "Mini Lathe", title_font, COL_WHITE, 0xFFFF);
     }
 
     display_fill_rect(0, DISP_H - 24, DISP_W, 24, rgb565(0, 20, 80));
-    display_string(DISP_W / 2 - 44, DISP_H - 20,
-                   LATHE_NAME, FONT_SM, COL_WHITE, 0xFFFF);
+    {
+        int _lw = display_text_width(LATHE_NAME, FONT_SM);
+        display_string((DISP_W - _lw) / 2, DISP_H - 20,
+                       LATHE_NAME, FONT_SM, COL_WHITE, 0xFFFF);
+    }
     display_flush();
     vTaskDelay(pdMS_TO_TICKS(5000));
 }
@@ -94,8 +119,11 @@ static void show_splash_screen(void)
 {
     display_clear(COL_BLACK);
     display_fill_rect(0, 0, DISP_W, SPLASH_HEADER_H, rgb565(0, 80, 160));
-    display_string(SPLASH_TITLE_X, SPLASH_TEXT_Y,
-                   LATHE_NAME, FONT_SM, COL_WHITE, 0xFFFF);
+    {
+        int _tw = display_text_width(LATHE_NAME, FONT_SM);
+        display_string((DISP_W - _tw) / 2, SPLASH_TEXT_Y,
+                       LATHE_NAME, FONT_SM, COL_WHITE, 0xFFFF);
+    }
 
     display_string(8, SPLASH_L1, "ESP32-S3 / IDF 5.5",  FONT_SM, COL_LIGHT_GREY, COL_BLACK);
     display_string(8, SPLASH_L2, "3x DM556 + NEMA23",   FONT_SM, COL_GREEN,      COL_BLACK);
@@ -103,8 +131,11 @@ static void show_splash_screen(void)
     display_string(8, SPLASH_L4, "Inicjalizacja...",     FONT_SM, COL_YELLOW,     COL_BLACK);
 
     display_fill_rect(0, SPLASH_FOOTER_Y, DISP_W, SPLASH_FOOTER_H, rgb565(20, 20, 20));
-    display_string(SPLASH_FOOT_X, SPLASH_FOOTER_Y + SPLASH_TEXT_Y,
-                   LATHE_NAME, FONT_SM, COL_BLUE, 0xFFFF);
+    {
+        int _fw = display_text_width(LATHE_NAME, FONT_SM);
+        display_string((DISP_W - _fw) / 2, SPLASH_FOOTER_Y + SPLASH_TEXT_Y,
+                       LATHE_NAME, FONT_SM, COL_BLUE, 0xFFFF);
+    }
     display_flush();
     vTaskDelay(pdMS_TO_TICKS(5000));
 }
