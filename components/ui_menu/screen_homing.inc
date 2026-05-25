@@ -96,14 +96,20 @@ static void draw_homing(void)
                        "Bazowanie osi...",
                        FONT_MD, COL_WHITE, 0xFFFF);
 
+        // 4g: Postęp per-oś — używa limits_axis_homed() gdy krańcówki aktywne
+        char st_z[24], st_x[24];
+        const char *icon_h = "[OK]";
+        snprintf(st_z, sizeof(st_z), "Os Z: %s",
+            limits_axis_homed(AXIS_Z) ? icon_h : "jedzie ->");
+        snprintf(st_x, sizeof(st_x), "Os X: %s",
+            limits_axis_homed(AXIS_X) ? icon_h : "jedzie ->");
         // Oś Z
         display_string(8, CONTENT_Y + 10,
-                       "Os Z -> jedzie do punktu bazowego",
+                       st_z,
                        FONT_SM, rgb565(255, 220, 180), 0xFFFF);
-
         // Oś X
         display_string(8, CONTENT_Y + 30,
-                       "Os X -> jedzie do punktu bazowego",
+                       st_x,
                        FONT_SM, rgb565(255, 220, 180), 0xFFFF);
 
         // Pasek postępu
@@ -154,10 +160,15 @@ static void handle_homing(encoder_event_t evt)
                 homing_ui.running   = true;
                 homing_ui.start_ms  = (int32_t)(xTaskGetTickCount() * portTICK_PERIOD_MS);
 
-                // Uruchom rzeczywisty homing (odkomentuj gdy krańcówki podłączone)
-                // limits_init();
-                // limits_home_axis(g_axis_z, LIMIT_Z_MIN, AXIS_DIR_NEG, 100.0f);
-                // limits_home_axis(g_axis_x, LIMIT_X_MIN, AXIS_DIR_NEG, 40.0f);
+                // ──────────────────────────────────────────────────────────
+                //  RZECZYWISTY HOMING — odkomentuj po podłączeniu krańcówek
+                //  i odkomentowaniu limits_init() w main.c (linia ~212).
+                //
+                //  limits_home_axis(g_axis_z, LIMIT_Z_MIN, AXIS_DIR_NEG, 100.0f);
+                //  limits_home_axis(g_axis_x, LIMIT_X_MIN, AXIS_DIR_NEG, 40.0f);
+                //
+                //  Patrz: main.c (komentarz sekcji "Krańcówki / Bazowanie")
+                // ──────────────────────────────────────────────────────────
 
                 ui_menu_notify("Bazowanie w toku...", COL_WARN, 500);
                 break;

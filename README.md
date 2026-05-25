@@ -347,3 +347,50 @@ Pliki `.raw` wrzucone do `components/display/font/` sa automatycznie pakowane do
 - **IO46** - strapping pin (log level), uzywany jako X_MIN. OK po boot.
 - **IO38** - BUILTIN LED na DevKitC-1. PWM podswietlenia TFT bedzie migac dioda na plytce.
 - **Kondensator 1000uF/63V** przy zaciskach zasilania DM556 - **zalecany**.
+
+---
+
+## Wskazówki pre-konstrukcyjne
+
+### Uruchomienie krańcówek (limit switches)
+
+Funkcje `limits_init()` i procedura homingu są domyślnie **wyłączone** — system pracuje bez
+fizycznych krańcówek, wyłącznie na symulowanym bazowaniu (10-sekundowy timer w UI).
+
+Aby włączyć rzeczywiste krańcówki i homing:
+
+1. **Podłącz fizycznie krańcówki NC** do GPIO zgodnie z `components/limits/include/limits.h`:
+   - `Z_MIN` = IO8
+   - `Z_MAX` = IO3 (input-only — wymagany zewnętrzny pull-up)
+   - `X_MIN` = IO46
+   - `X_MAX` = IO45
+
+2. **Odkomentuj** `limits_init()` w `main/main.c` (linia ~212) oraz w
+   `components/ui_menu/screen_homing.inc` wywołania `limits_home_axis()` (linie ~157-159).
+
+3. **Skompiluj i flashuj** — `idf.py build flash`.
+
+Po włączeniu:
+- ISR krańcówek natychmiast zatrzymuje oś przy aktywacji limitu.
+- `limits_can_move()` blokuje ruch w stronę aktywnego limitu.
+- Przed zhomowaniem dozwolony jest tylko ruch w stronę krańcówki home (AXIS_DIR_NEG).
+- Ekran główny pokazuje czerwony pasek `!!! KRANCOWKA !!!` przy wyzwolonej krańcówce.
+
+### Testowanie ELS z głębokością skrawania
+
+Ekran ELS ma teraz 5 parametrów (przełączanych przyciskiem SW):
+1. Preset gwintu
+2. Z start
+3. Z koniec
+4. Ilość przejść
+5. **Głębokość X na przejście** (krok 0.02 mm, zakres 0.02–1.00 mm)
+
+`depth_per_pass` jest teraz przekazywany do `els_config_t` — oś X będzie dosuwana
+o zadaną wartość przed każdym kolejnym przejściem. Domyślnie 0.10 mm/przejście.
+
+### Uwaga o podwójnej definicji `g_homed`
+
+Naprawiono błąd linkera: `volatile bool g_homed` był definiowany jednocześnie w
+`ui_menu.c` i `homing_state.c`. Definicja w `ui_menu.c` została usunięta —
+symbol pochodzi wyłącznie z `homing_state.c`. Przy aktualizacji z wcześniejszej wersji
+należy usunąć duplikat z własnych modyfikacji.

@@ -16,10 +16,8 @@ static struct {
             .cycle_passes=3, .param_sel=0 };
 
 static volatile bool cycle_abort = false;
-static const uint16_t X_JOG_STEPS[] = {1,4,16,64,160};
-
-static const char    *X_JOG_LBL[]       = {"1","4","16","64","160"};
-#define X_JOG_COUNT 5
+// Używa wspólnych JOG_STEPS / JOG_STEPS_LBL / JOG_STEPS_COUNT z ui_menu.c
+#define X_JOG_COUNT JOG_STEPS_COUNT
 static const char *x_mode_name[] = {"JOG X","AUTO X","CYKL ZX"};
 
 static void cycle_zx_task(void *arg)
@@ -64,7 +62,7 @@ static void cycle_zx_task(void *arg)
 
 static void draw_axis_x(void)
 {
-    draw_header("OS X – DOSUW", rgb565(0,100,80));
+    draw_header("OS X – DOSUW", COL_HDR_AXIS_X);
     display_fill_rect(0, HEADER_H, SCR_W, CONTENT_H+2, COLOR_BLACK);
     char buf[24]; int16_t y=CONTENT_Y+2;
 
@@ -91,7 +89,7 @@ static void draw_axis_x(void)
     display_draw_hline(4,y,SCR_W-8,COLOR_LIGHT_GREY); y+=5;
 
     if (x_ui.mode==AXIS_X_MODE_JOG) {
-        snprintf(buf,sizeof(buf),"Krok: %s kr",X_JOG_LBL[x_ui.jog_step_idx]);
+        snprintf(buf,sizeof(buf),"Krok: %s kr",JOG_STEPS_LBL[x_ui.jog_step_idx]);
         display_draw_string(4,y,buf,COL_LABEL,COLOR_BLACK,1); y+=ROW_H;
         display_draw_string(4,y,"ENC=jog SW=krok BTN2=tryb",COLOR_LIGHT_GREY,COLOR_BLACK,1);
     } else if (x_ui.mode==AXIS_X_MODE_AUTO) {
@@ -123,12 +121,12 @@ static void handle_axis_x(encoder_event_t evt)
     }
     switch (evt) {
         case ENCODER_EVT_CW:
-            if (x_ui.mode==AXIS_X_MODE_JOG) { if(g_axis_x) axis_jog(g_axis_x,AXIS_DIR_POS,X_JOG_STEPS[x_ui.jog_step_idx],40); }
+            if (x_ui.mode==AXIS_X_MODE_JOG) { if(g_axis_x) axis_jog(g_axis_x,AXIS_DIR_POS,JOG_STEPS[x_ui.jog_step_idx],40); }
             else if (x_ui.mode==AXIS_X_MODE_AUTO) { if(x_ui.param_sel==0) x_ui.auto_target_mm+=0.05f; else x_ui.auto_speed+=5.0f; }
             else { if(x_ui.param_sel==0) x_ui.cycle_depth_mm+=0.05f; else if(x_ui.param_sel==1) x_ui.cycle_z_end-=1.0f; else if(x_ui.cycle_passes<20) x_ui.cycle_passes++; }
             break;
         case ENCODER_EVT_CCW:
-            if (x_ui.mode==AXIS_X_MODE_JOG) { if(g_axis_x) axis_jog(g_axis_x,AXIS_DIR_NEG,X_JOG_STEPS[x_ui.jog_step_idx],40); }
+            if (x_ui.mode==AXIS_X_MODE_JOG) { if(g_axis_x) axis_jog(g_axis_x,AXIS_DIR_NEG,JOG_STEPS[x_ui.jog_step_idx],40); }
             else if (x_ui.mode==AXIS_X_MODE_AUTO) { if(x_ui.param_sel==0) x_ui.auto_target_mm-=0.05f; else if(x_ui.auto_speed>5.0f) x_ui.auto_speed-=5.0f; }
             else { if(x_ui.param_sel==0&&x_ui.cycle_depth_mm>0.05f) x_ui.cycle_depth_mm-=0.05f; else if(x_ui.param_sel==1) x_ui.cycle_z_end+=1.0f; else if(x_ui.cycle_passes>1) x_ui.cycle_passes--; }
             break;

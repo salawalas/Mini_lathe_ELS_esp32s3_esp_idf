@@ -262,7 +262,9 @@ void display_draw_bitmap_file(int x, int y, const char *spiffs_path)
         int expected = (int)hdr[0] * (int)hdr[1] * 2 + 4; // +4 na nagłówek
         if (expected != file_size)
         {
-            // fallback lub odrzuć
+            ESP_LOGW(TAG, "bitmap size mismatch: %ld != %d, ignoring header",
+                     file_size, expected);
+            // fallthrough — wymiary mogą być poprawne mimo złego rozmiaru pliku
         }
     } else {
         // Fallback: full screen (160×128) without header
@@ -273,12 +275,11 @@ void display_draw_bitmap_file(int x, int y, const char *spiffs_path)
     int px_count = bmp_w * bmp_h;
     uint16_t *buf = (uint16_t *)heap_caps_malloc(
         px_count * 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    if (!buf) { fclose(f); return; }
     if (!buf)
     {
-    ESP_LOGE(TAG, "bitmap malloc fail: %d B", px_count * 2);
-    fclose(f);
-    return;
+        ESP_LOGE(TAG, "bitmap malloc fail: %d B", px_count * 2);
+        fclose(f);
+        return;
     }
     int rd = fread(buf, 2, px_count, f);
     fclose(f);

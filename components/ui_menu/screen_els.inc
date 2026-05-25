@@ -4,10 +4,11 @@
 static struct {
     uint8_t  preset_idx;
     float    z_start_mm, z_end_mm;
+    float    depth_mm;
     uint8_t  passes, param_sel;
     bool     confirm_mode;
 } els_ui = { .preset_idx=5, .z_start_mm=0.0f, .z_end_mm=-20.0f,
-             .passes=1, .param_sel=0, .confirm_mode=false };
+             .depth_mm=0.10f, .passes=1, .param_sel=0, .confirm_mode=false };
 
 static void draw_els(void)
 {
@@ -29,7 +30,21 @@ static void draw_els(void)
         display_draw_string(4,y,buf,COL_VAL,COLOR_BLACK,1); y+=ROW_H;
         snprintf(buf,sizeof(buf),"RPM: %4d  %s",st.spindle_rpm,st.sync_ok?"SYNC OK":"SYNC...");
         display_draw_string(4,y,buf,st.sync_ok?COL_OK:COL_WARN,COLOR_BLACK,1); y+=ROW_H;
-        snprintf(buf,sizeof(buf),"Kroki: %ld",(long)st.steps_sent);
+        // 4d: Kroki + pozostały czas (przybliżenie) na jednej linii
+        if (st.spindle_rpm > 0 && st.sync_ok && st.pitch_mm > 0.001f) {
+            float len = fabsf(els_ui.z_end_mm - els_ui.z_start_mm);
+            if (len > 0.1f) {
+                float fwd_sec = (len * 60.0f) / ((float)st.spindle_rpm * st.pitch_mm);
+                float pass_sec = fwd_sec + 1.0f; // dolicz powrót + dosuw X
+                int rem_passes = st.pass_total - st.pass_current + 1;
+                int rem_sec = (int)(pass_sec * rem_passes + 0.5f);
+                snprintf(buf,sizeof(buf),"Kroki: %ld  %ds",(long)st.steps_sent, rem_sec);
+            } else {
+                snprintf(buf,sizeof(buf),"Kroki: %ld",(long)st.steps_sent);
+            }
+        } else {
+            snprintf(buf,sizeof(buf),"Kroki: %ld",(long)st.steps_sent);
+        }
         display_draw_string(4,y,buf,COLOR_LIGHT_GREY,COLOR_BLACK,1); y+=ROW_H;
         display_draw_hline(4,y,SCR_W-8,COLOR_LIGHT_GREY); y+=4;
         display_draw_string(4,y,"BTN1=STOP ELS",COL_WARN,COLOR_BLACK,1);
@@ -44,6 +59,8 @@ static void draw_els(void)
         snprintf(buf,sizeof(buf),"Skok: %.3f mm",pitch);
         display_draw_string(4,y,buf,COL_VAL,COLOR_BLACK,1); y+=ROW_H;
         snprintf(buf,sizeof(buf),"Z: %.1f->%.1f mm",els_ui.z_start_mm,els_ui.z_end_mm);
+        display_draw_string(4,y,buf,COL_VAL,COLOR_BLACK,1); y+=ROW_H;
+        snprintf(buf,sizeof(buf),"X: %.2f mm/przej",els_ui.depth_mm);
         display_draw_string(4,y,buf,COL_VAL,COLOR_BLACK,1); y+=ROW_H;
         snprintf(buf,sizeof(buf),"Przejsc: %d",els_ui.passes);
         display_draw_string(4,y,buf,COL_VAL,COLOR_BLACK,1); y+=ROW_H;
@@ -62,6 +79,8 @@ static void draw_els(void)
         draw_row(y,"Z koniec:",buf,COL_VAL,els_ui.param_sel==2); y+=ROW_H;
         snprintf(buf,sizeof(buf),"%d",els_ui.passes);
         draw_row(y,"Przejscia:",buf,COL_VAL,els_ui.param_sel==3); y+=ROW_H;
+        snprintf(buf,sizeof(buf),"%.2fmm",els_ui.depth_mm);
+        draw_row(y,"X Glebokosc:",buf,COL_VAL,els_ui.param_sel==4); y+=ROW_H;
         display_draw_hline(4,y,SCR_W-8,COLOR_LIGHT_GREY); y+=4;
         display_draw_string(4,y,"SW=param SW>>>=START",COLOR_LIGHT_GREY,COLOR_BLACK,1);
     }
@@ -74,10 +93,11 @@ static void handle_els(encoder_event_t evt)
     if (evt==ENCODER_EVT_BTN1_LONG) {
         els_stop(); spindle_emergency_stop(); stepper_stop();
         els_ui.confirm_mode=false;
+        buzzer_signal_estop();
         ui_menu_notify("!!! E-STOP !!!", COLOR_RED, 3000); return;
     }
     if (els_is_running()) {
-        if (evt==ENCODER_EVT_BTN1_PRESS) { els_stop(); ui_menu_notify("ELS STOP",COL_WARN,1000); }
+        if (evt==ENCODER_EVT_BTN1_PRESS) { els_stop(); buzzer_signal_warn(); ui_menu_notify("ELS STOP",COL_WARN,1000); }
         return;
     }
     if (els_ui.confirm_mode) {
@@ -88,12 +108,13 @@ static void handle_els(encoder_event_t evt)
             if (!spindle_is_at_speed()) { ui_menu_notify("Uruchom wrzeciono!",COL_WARN,2000); return; }
             els_config_t cfg={.pitch_mm=pitch,
                 .feed_dir=(els_ui.z_end_mm<els_ui.z_start_mm)?STEPPER_DIR_CCW:STEPPER_DIR_CW,
-                .z_start_mm=els_ui.z_start_mm,.z_end_mm=els_ui.z_end_mm,.passes=els_ui.passes};
+                .z_start_mm=els_ui.z_start_mm,.z_end_mm=els_ui.z_end_mm,.passes=els_ui.passes,
+                .depth_per_pass=els_ui.depth_mm};
                 if (stepper_get_state() != STEPPER_STATE_IDLE) {
                 ui_menu_notify("Os Z jeszcze biegnie!", COL_WARN, 2000);
                 return;
                 }
-            if (els_start(&cfg)) ui_menu_notify("ELS START!",COL_OK,800);
+            if (els_start(&cfg)) { buzzer_signal_ok(); ui_menu_notify("ELS START!",COL_OK,800); }
             else ui_menu_notify("Blad startu ELS",COLOR_RED,2000);
         } else if (evt==ENCODER_EVT_BTN2_PRESS||evt==ENCODER_EVT_SW_LONG) {
             els_ui.confirm_mode=false; ui_menu_notify("Anulowano",COL_LABEL,800);
@@ -107,6 +128,7 @@ static void handle_els(encoder_event_t evt)
                 case 1: els_ui.z_start_mm+=0.5f; break;
                 case 2: els_ui.z_end_mm+=0.5f; break;
                 case 3: if(els_ui.passes<20) els_ui.passes++; break;
+                case 4: if(els_ui.depth_mm<1.0f) els_ui.depth_mm+=0.02f; break;
             } break;
         case ENCODER_EVT_CCW:
             switch(els_ui.param_sel){
@@ -114,9 +136,10 @@ static void handle_els(encoder_event_t evt)
                 case 1: els_ui.z_start_mm-=0.5f; break;
                 case 2: els_ui.z_end_mm-=0.5f; break;
                 case 3: if(els_ui.passes>1) els_ui.passes--; break;
+                case 4: if(els_ui.depth_mm>0.02f) els_ui.depth_mm-=0.02f; break;
             } break;
         case ENCODER_EVT_SW_PRESS:
-            els_ui.param_sel=(els_ui.param_sel+1)%4; break;
+            els_ui.param_sel=(els_ui.param_sel+1)%5; break;
         case ENCODER_EVT_SW_LONG:
             if (!spindle_is_at_speed()) ui_menu_notify("Uruchom wrzeciono!",COL_WARN,2000);
             else {

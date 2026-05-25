@@ -25,3 +25,4 @@ chat_export*.md
 sdkconfig
 sdkconfig.old
 dependencies.lock
+%SystemDrive%

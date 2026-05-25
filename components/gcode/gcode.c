@@ -64,7 +64,7 @@ static bool get_word(const char *line, char letter, float *val)
 {
     const char *p = line;
     while (*p) {
-        if (toupper(*p) == toupper(letter)) {
+        if (toupper((unsigned char)*p) == toupper(letter)) {
             p++;
             *val = strtof(p, (char **)&p);
             return true;

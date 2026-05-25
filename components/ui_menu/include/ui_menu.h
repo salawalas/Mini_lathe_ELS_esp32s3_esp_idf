@@ -7,6 +7,8 @@ typedef enum {
     SCREEN_SPINDLE, SCREEN_SETTINGS, SCREEN_ELS, SCREEN_AXIS_X,
     SCREEN_HOMING,      // Bazowanie osi
     SCREEN_BACKLIGHT,   // Podsiwetlenie
+    SCREEN_GCODE,       // G-code z karty SD
+    SCREEN_POSITION,    // Pozycja / presety osi
     SCREEN_COUNT
 } screen_id_t;
 

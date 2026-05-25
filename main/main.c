@@ -21,6 +21,8 @@
 #include "sdcard.h"
 #include <sys/stat.h>
 #include "homing_state.h"
+#include "gcode.h"
+#include "buzzer.h"
 #include <stdio.h>
 
 static const char *TAG = "MAIN";
@@ -54,47 +56,62 @@ static void show_logo_screen(void)
         if (f)
         {
             uint16_t lw = 0, lh = 0;
-            fread(&lw, 2, 1, f);
-            fread(&lh, 2, 1, f);
-            ESP_LOGI("MAIN", "logo.raw: %d x %d px (%ld B)",
-                     (int)lw, (int)lh, (long)st.st_size);
-
-            if (lw > 0 && lw <= DISP_W && lh > 0 && lh <= DISP_H)
+            size_t r1 = fread(&lw, sizeof(lw), 1, f);
+            size_t r2 = fread(&lh, sizeof(lh), 1, f);
+            if (r1 != 1 || r2 != 1)
             {
-                int px = (int)lw * (int)lh;
-                uint16_t *buf = heap_caps_malloc(px * 2, MALLOC_CAP_8BIT);
-                if (buf && (int)fread(buf, 2, px, f) == px)
-                {
-                    int usable_h = DISP_H - 24; // zostaw miejsce na pasek LATHE_NAME
-                    int logo_x = (DISP_W - (int)lw) / 2;
-                    int logo_y = (usable_h - (int)lh) / 2;
-                    if (logo_y < 0)
-                        logo_y = 0;
-                    display_draw_bitmap(logo_x, logo_y, lw, lh, buf);
-                    logo_shown = true;
-                    ESP_LOGI("MAIN", "Logo wyswietlone @ %d,%d", logo_x, logo_y);
-                }
-                else
-                {
-                    ESP_LOGE("MAIN", "Blad odczytu logo lub malloc fail");
-                }
-                if (buf)
-                    free(buf);
+                ESP_LOGE(TAG, "Nie mozna odczytac rozmiarow logo.raw");
             }
             else
             {
-                ESP_LOGW("MAIN", "logo.raw: nieprawidlowe wymiary %dx%d", lw, lh);
-            }
-            fclose(f);
-        }
-        }
-        else
-        {
-            ESP_LOGW("MAIN", "logo.raw nie znaleziony lub za maly");
-        }
+                ESP_LOGI(TAG, "logo.raw: %d x %d px (%ld B)",
+                         (int)lw, (int)lh, (long)st.st_size);
 
-        if (!logo_shown)
-        {
+                if (lw > 0 && lw <= DISP_W && lh > 0 && lh <= DISP_H)
+                {
+                    size_t px_count = (size_t)lw * (size_t)lh;
+                    size_t bytes = px_count * sizeof(uint16_t);
+                    uint16_t *buf = heap_caps_malloc(bytes, MALLOC_CAP_8BIT);
+                    if (!buf)
+                    {
+                        ESP_LOGE(TAG, "malloc fail for %u bytes", (unsigned)bytes);
+                    }
+                    else
+                    {
+                        size_t n = fread(buf, sizeof(uint16_t), px_count, f);
+                        if (n == px_count)
+                        {
+                            int logo_x = (DISP_W - (int)lw) / 2;
+                            int logo_y = (DISP_H - (int)lh) / 2 - 12;
+                            if (logo_y < 0)
+                                logo_y = 0;
+                            display_draw_bitmap(logo_x, logo_y, lw, lh, buf);
+                            logo_shown = true;
+                            ESP_LOGI(TAG, "Logo wyswietlone @ %d,%d", logo_x, logo_y);
+                        }
+                        else
+                        {
+                            ESP_LOGE(TAG, "Blad odczytu logo: odczytano %u z %u",
+                                     (unsigned)n, (unsigned)px_count);
+                        }
+                        heap_caps_free(buf);
+                    } // koniec else (!buf)
+                } // koniec if (lw > 0 ...)
+                else
+                {
+                    ESP_LOGW(TAG, "logo.raw: nieprawidlowe wymiary %dx%d", lw, lh);
+                } // koniec else (złe wymiary)
+            } // koniec else (r1==1 && r2==1)
+            fclose(f);
+        } // koniec if (f)
+    } // koniec if (stat == 0)
+    else
+    {
+        ESP_LOGW("MAIN", "logo.raw nie znaleziony lub za maly");
+    }
+
+    if (!logo_shown)
+    {
         int mid_y = DISP_H / 2;
         int _w = display_text_width("Mini Lathe", FONT_LG);
         display_string((DISP_W - _w) / 2, mid_y - 32,
@@ -125,10 +142,10 @@ static void show_splash_screen(void)
                        LATHE_NAME, FONT_SM, COL_WHITE, 0xFFFF);
     }
 
-    display_string(8, SPLASH_L1, "ESP32-S3 / IDF 5.5",  FONT_SM, COL_LIGHT_GREY, COL_BLACK);
-    display_string(8, SPLASH_L2, "3x DM556 + NEMA23",   FONT_SM, COL_GREEN,      COL_BLACK);
-    display_string(8, SPLASH_L3, "ELS + E-STOP",         FONT_SM, COL_CYAN,       COL_BLACK);
-    display_string(8, SPLASH_L4, "Inicjalizacja...",     FONT_SM, COL_YELLOW,     COL_BLACK);
+    display_string(8, SPLASH_L1, "ESP32-S3 / IDF 5.5", FONT_SM, COL_LIGHT_GREY, COL_BLACK);
+    display_string(8, SPLASH_L2, "3x DM556 + NEMA23", FONT_SM, COL_GREEN, COL_BLACK);
+    display_string(8, SPLASH_L3, "ELS + E-STOP", FONT_SM, COL_CYAN, COL_BLACK);
+    display_string(8, SPLASH_L4, "Inicjalizacja...", FONT_SM, COL_YELLOW, COL_BLACK);
 
     display_fill_rect(0, SPLASH_FOOTER_Y, DISP_W, SPLASH_FOOTER_H, rgb565(20, 20, 20));
     {
@@ -144,22 +161,23 @@ static void show_splash_screen(void)
 static void show_homing_warning(void)
 {
     const int BLINK_HALF_MS = 500;
-    const int TOTAL_MS      = 5000;
+    const int TOTAL_MS = 5000;
     int elapsed = 0;
     bool on = true;
 
-    while (elapsed < TOTAL_MS) {
-        uint16_t bg  = on ? rgb565(200, 0, 0) : rgb565(80, 0, 0);
-        uint16_t fg  = COL_WHITE;
+    while (elapsed < TOTAL_MS)
+    {
+        uint16_t bg = on ? rgb565(200, 0, 0) : rgb565(80, 0, 0);
+        uint16_t fg = COL_WHITE;
 
         display_clear(bg);
 
         // Duży napis – wyśrodkowany
         int mid_y = DISP_H / 2;
         display_string(DISP_W / 2 - 72, mid_y - 36,
-                       "! UWAGA !",     FONT_LG, fg, 0xFFFF);
+                       "! UWAGA !", FONT_LG, fg, 0xFFFF);
         display_string(8, mid_y,
-                       "Brak bazowania osi!",  FONT_MD, fg, 0xFFFF);
+                       "Brak bazowania osi!", FONT_MD, fg, 0xFFFF);
         display_string(8, mid_y + 30,
                        "Idz do Menu > Bazowanie osi",
                        FONT_SM, rgb565(255, 200, 200), 0xFFFF);
@@ -176,10 +194,14 @@ void app_main(void)
     ESP_LOGI(TAG, "=== " LATHE_NAME " START ===");
 
     // ── Display init (SPIFFS + fonty) ────────────────────────
-    if (display_init() != ESP_OK) {
+    if (display_init() != ESP_OK)
+    {
         ESP_LOGE(TAG, "Display init FAIL!");
         return;
     }
+
+    // ── Buzzer ────────────────────────────────────────────────
+    buzzer_init();
 
     // ── Sekwencja startowa ────────────────────────────────────
     show_logo_screen();
@@ -189,11 +211,14 @@ void app_main(void)
     // ── NVS ───────────────────────────────────────────────────
     esp_err_t nvs_ret = nvs_flash_init();
     if (nvs_ret == ESP_ERR_NVS_NO_FREE_PAGES ||
-        nvs_ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        nvs_ret == ESP_ERR_NVS_NEW_VERSION_FOUND)
+    {
         ESP_LOGW(TAG, "NVS: erase i reinit...");
         ESP_ERROR_CHECK(nvs_flash_erase());
         ESP_ERROR_CHECK(nvs_flash_init());
-    } else {
+    }
+    else
+    {
         ESP_ERROR_CHECK(nvs_ret);
     }
     ESP_LOGI(TAG, "NVS OK");
@@ -205,25 +230,50 @@ void app_main(void)
     spindle_init();
     vTaskDelay(pdMS_TO_TICKS(200));
 
-    // ── Homing – wyłączony, dostępny z Menu > Bazowanie osi ──
+    // ── Krańcówki (LIMIT SWITCHES) – WYŁĄCZONE do testów ───────
+    // Aby włączyć: odkomentuj poniższy limits_init().
+    // Wymaga fizycznie podłączonych krańcówek NC do GPIO (patrz limits.h):
+    //   Z_MIN=IO8, Z_MAX=IO3, X_MIN=IO46, X_MAX=IO45
+    // Po odkomentowaniu: ISR krańcówek zatrzymuje oś, a limits_can_move()
+    // blokuje ruch w stronę aktywnego limitu.
+    //
+    // UWAGA: limits_init() musi być wywołane PRZED els_init() i ui_menu_init(),
+    //        ponieważ ELS/ui używają limits_can_move().
+    // ── Wywołanie (zakomentowane – odkomentuj po podłączeniu HW) ─
     // limits_init();
-    // Bazowanie odbywa się tylko przez: Menu → Bazowanie osi → SW (długi)
+    //
+    // ── Bazowanie (HOMING) – WYŁĄCZONE, dostępne przez UI ────────
+    // Aby uruchomić prawdziwy homing:
+    //   1. Odkomentuj limits_init() powyżej (linia ~212)
+    //   2. W components/ui_menu/screen_homing.inc odkomentuj linie ~157-159:
+    //        limits_home_axis(g_axis_z, LIMIT_Z_MIN, AXIS_DIR_NEG, 100.0f);
+    //        limits_home_axis(g_axis_x, LIMIT_X_MIN, AXIS_DIR_NEG, 40.0f);
+    //   3. Skompiluj i flashuj.
+    // Obecnie: Menu → Bazowanie osi → SW (długi) uruchamia tylko symulację czasową.
 
     // ── ELS + UI – g_homed=false, krzyżyk będzie widoczny ────
     els_init();
-    ui_menu_init();   // startuje ui_task, pokazuje dashboard
+    ui_menu_init(); // startuje ui_task, pokazuje dashboard
 
     // ── SD card – nieblokująca ────────────────────────────────
-    if (sdcard_init() == ESP_OK) {
+    if (sdcard_init() == ESP_OK)
+    {
         ESP_LOGI(TAG, "Karta SD zamontowana.");
-    } else {
+    }
+    else
+    {
         ESP_LOGW(TAG, "Karta SD nieobecna – dzialanie bez G-code.");
     }
+
+    // ── G-code parser ────────────────────────────────────────
+    gcode_init();
+    ESP_LOGI(TAG, "Parser G-code gotowy.");
 
     ESP_LOGI(TAG, "=== Wszystkie moduly aktywne (g_homed=%d) ===",
              (int)g_homed);
 
-    while (1) {
+    while (1)
+    {
         vTaskDelay(pdMS_TO_TICKS(10000));
         ESP_LOGD(TAG, "Heap: %lu B  homed: %d",
                  (unsigned long)esp_get_free_heap_size(), (int)g_homed);

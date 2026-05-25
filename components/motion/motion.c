@@ -24,6 +24,14 @@ const thread_preset_t ELS_THREAD_PRESETS[] = {
     {"1/2-13 UNC",THREAD_IMPERIAL, 13.0f}, {"1/4-28 UNF",THREAD_IMPERIAL, 28.0f},
     {"Tr10 x2",   THREAD_METRIC,   2.00f}, {"Tr12 x3",   THREAD_METRIC,   3.00f},
     {"Tr16 x4",   THREAD_METRIC,   4.00f},
+    // BSP (British Standard Pipe) – TPI
+    {"G 1/8-28",  THREAD_IMPERIAL, 28.0f}, {"G 1/4-19",  THREAD_IMPERIAL, 19.0f},
+    {"G 3/8-19",  THREAD_IMPERIAL, 19.0f}, {"G 1/2-14",  THREAD_IMPERIAL, 14.0f},
+    {"G 3/4-14",  THREAD_IMPERIAL, 14.0f}, {"G 1-11",    THREAD_IMPERIAL, 11.0f},
+    // NPT (National Pipe Taper) – TPI
+    {"1/8-27 NPT",THREAD_IMPERIAL, 27.0f}, {"1/4-18 NPT",THREAD_IMPERIAL, 18.0f},
+    {"3/8-18 NPT",THREAD_IMPERIAL, 18.0f}, {"1/2-14 NPT",THREAD_IMPERIAL, 14.0f},
+    {"3/4-14 NPT",THREAD_IMPERIAL, 14.0f},
 };
 const uint8_t ELS_THREAD_PRESETS_COUNT = sizeof(ELS_THREAD_PRESETS)/sizeof(ELS_THREAD_PRESETS[0]);
 
@@ -66,8 +74,6 @@ static void els_task_fn(void *arg)
 {
     els_notify_target = xTaskGetCurrentTaskHandle();
 
-    float x_surface = g_axis_x ? axis_get_position_mm(g_axis_x) : 0.0f;
-
     for (uint8_t pass = 1; pass <= e.cfg.passes; pass++) {
         if (e.stop_request) break;
         e.pass_current = pass;
@@ -76,8 +82,9 @@ static void els_task_fn(void *arg)
         e.rev_pending  = false;
 
         // ── Dosuw X (głębokość skrawania) ──
+        // Odczyt X co przejście — odporny na ręczne korekty i błędy poprzedniego przejścia
         if (e.cfg.depth_per_pass > 0.0f && g_axis_x) {
-            float target_x = x_surface - e.cfg.depth_per_pass * (float)(pass - 1);
+            float target_x = axis_get_position_mm(g_axis_x) - e.cfg.depth_per_pass;
             ESP_LOGI(TAG, "Przejscie %d/%d: X → %.3f mm", pass, e.cfg.passes, target_x);
             if (!axis_move_to_mm(g_axis_x, target_x, 30.0f)) {
                 ESP_LOGW(TAG, "Blad dosuwu X w przejsciu %d", pass);

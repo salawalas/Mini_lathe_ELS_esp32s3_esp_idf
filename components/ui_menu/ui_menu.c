@@ -15,6 +15,9 @@
 #include "motion.h"
 #include "axis.h"
 #include "limits.h"
+#include "gcode.h"
+#include "sdcard.h"
+#include "buzzer.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -23,14 +26,14 @@
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "esp_attr.h"
+#include "esp_heap_caps.h"
 #include "nvs_flash.h"
 #include "nvs.h"
 #include "homing_state.h"
 
 static const char *TAG = "UI";
 
-// Globalny stan bazowania osi (extern w ui_menu.h)
-volatile bool g_homed = false;
+// g_homed jest zdefiniowane w homing_state.c — nie duplikować
 
 // ------------------------------------------------------------
 //  Wymiary ekranu z menuconfig -> TFT Configuration
@@ -68,6 +71,12 @@ volatile bool g_homed = false;
 #define COL_LABEL COLOR_LIGHT_GREY
 #define COL_WARN COLOR_ORANGE
 #define COL_OK COLOR_GREEN
+
+// Kolory nagłówków ekranów (4f: ujednolicenie)
+#define COL_HDR_GCODE   rgb565(20,80,20)
+#define COL_HDR_AXIS_X  rgb565(0,100,80)
+#define COL_HDR_BACKLIGHT rgb565(80,40,0)
+#define COL_HDR_POSITION rgb565(0,60,100)
 
 // ------------------------------------------------------------
 //  Stan globalny UI
@@ -120,6 +129,8 @@ static const char *MENU_NAMES[] = {
     "Os X dosuw",
     "Bazowanie osi",
     "Podswietlenie",
+    "G-code (SD)",
+    "Pozycja / Presety",
     // SCREEN_MENU (ostatni) nie pojawia sie na liscie – sluzy jako sentinel
 };
 
@@ -127,7 +138,16 @@ static const char *MENU_NAMES[] = {
 static const screen_id_t MENU_ORDER[] = {
     SCREEN_MAIN, SCREEN_JOG, SCREEN_FEED, SCREEN_SPINDLE,
     SCREEN_SETTINGS, SCREEN_ELS, SCREEN_AXIS_X,
-    SCREEN_HOMING, SCREEN_BACKLIGHT, SCREEN_MENU};
+    SCREEN_HOMING, SCREEN_BACKLIGHT, SCREEN_GCODE,
+    SCREEN_POSITION, SCREEN_MENU};
+
+// Sprawdź czy MENU_NAMES zgadza się z MENU_ORDER (minus sentinel SCREEN_MENU)
+_Static_assert(
+    (sizeof(MENU_NAMES) / sizeof(MENU_NAMES[0])) ==
+    (sizeof(MENU_ORDER) / sizeof(MENU_ORDER[0]) - 1),
+    "MENU_NAMES count must match MENU_ORDER (excl. sentinel SCREEN_MENU)");
+
+#define menu_count ((int)(sizeof(MENU_ORDER) / sizeof(MENU_ORDER[0]) - 1))
 
 // ------------------------------------------------------------
 //  Helpers
@@ -151,14 +171,18 @@ static void draw_footer(void)
                        "X", FONT_MD, rgb565(255, 60, 60), 0xFFFF);
     }
     const char *hints[] = {
-        "SW=menu",
-        "SW=OK BTN2=back",
-        "ENC=krok SW=go",
-        "BTN3=start BTN1=stop",
-        "ENC=RPM BTN3=start",
-        "ENC=val SW=save",
-        "SW>>>=START",
-        "ENC=jog SW=tryb",
+        "SW=menu",                    // SCREEN_MAIN
+        "SW=OK BTN2=back",           // SCREEN_MENU
+        "ENC=krok SW=go",            // SCREEN_JOG
+        "BTN3=start BTN1=stop",      // SCREEN_FEED
+        "ENC=RPM BTN3=start",        // SCREEN_SPINDLE
+        "ENC=val SW=save",           // SCREEN_SETTINGS
+        "SW>>>=START",               // SCREEN_ELS
+        "ENC=jog SW=tryb",           // SCREEN_AXIS_X
+        "SW>>>=START",               // SCREEN_HOMING
+        "ENC=jasn SW=zapisz",        // SCREEN_BACKLIGHT
+        "ENC=plik BTN3=start",       // SCREEN_GCODE
+        "ENC=val BTN3=ustaw",        // SCREEN_POSITION
     };
     if (ui.uptime_ms < ui.notify_until_ms && ui.notify_msg[0])
     {
@@ -202,8 +226,10 @@ static void draw_main(void)
     display_draw_string(4, y, "RPM:", COL_LABEL, COLOR_BLACK, 1);
     snprintf(buf, sizeof(buf), "%3d/%3d", sp.rpm_actual, sp.rpm_target);
     display_draw_string(UI_PAD_X + 32, y, buf, sp.at_speed ? COL_OK : COL_WARN, COLOR_BLACK, 1);
-    snprintf(buf, sizeof(buf), "%s", sp.power_enabled ? "ON" : "OF");
-    display_draw_string(SCR_W - 20, y, buf, sp.power_enabled ? COL_OK : COL_LABEL, COLOR_BLACK, 1);
+// 4a: Kierunek wrzeciona + zasilanie
+    const char *dir_arr = (sp.dir == SPINDLE_DIR_FWD) ? ">" : "<";
+    snprintf(buf, sizeof(buf), "%s%s", dir_arr, sp.power_enabled ? "ON" : "OF");
+    display_draw_string(SCR_W - 28, y, buf, sp.power_enabled ? COL_OK : COL_LABEL, COLOR_BLACK, 1);
     y += ROW_H;
 
     // Pozycja Z + status homingu
@@ -255,6 +281,14 @@ static void draw_main(void)
     }
     display_draw_string(4, y, buf, spd ? COLOR_YELLOW : COL_LABEL, COLOR_BLACK, 1);
 
+    // ── 4b+4c: SD + Heap ──
+    y += ROW_H;
+    snprintf(buf, sizeof(buf), "%s", sdcard_is_mounted() ? "SD:OK" : "SD:--");
+    display_draw_string(4, y, buf, sdcard_is_mounted() ? COL_OK : COL_LABEL, COLOR_BLACK, 1);
+    uint32_t free_k = esp_get_free_heap_size() / 1024;
+    snprintf(buf, sizeof(buf), "%luK", free_k);
+    display_draw_string(SCR_W - 28, y, buf, COLOR_LIGHT_GREY, COLOR_BLACK, 1);
+
     draw_footer();
     display_flush();
 }
@@ -270,6 +304,7 @@ static void handle_main(encoder_event_t evt)
     case ENCODER_EVT_BTN1_LONG:
         spindle_emergency_stop();
         stepper_stop();
+        buzzer_signal_estop();
         ui_menu_notify("!!! E-STOP !!!", COLOR_RED, 3000);
         break;
     case ENCODER_EVT_BTN2_PRESS:
@@ -300,7 +335,6 @@ static void draw_menu(void)
     draw_header("MENU", COL_HDR_MENU);
     display_fill_rect(0, HEADER_H, SCR_W, CONTENT_H + 2, COLOR_BLACK);
 
-    int menu_count = (int)(sizeof(MENU_ORDER) / sizeof(MENU_ORDER[0])) - 1;
     const int ROW_SM = ROW_H;
     const int ROW_MD = ROW_H + ROW_H / 2;
 
@@ -366,7 +400,6 @@ static void draw_menu(void)
 static void backlight_screen_enter(void); // forward decl
 static void handle_menu(encoder_event_t evt)
 {
-    int menu_count = (int)(sizeof(MENU_ORDER) / sizeof(MENU_ORDER[0])) - 1;
     switch (evt) {
     case ENCODER_EVT_CW:
         ui.menu_sel = (ui.menu_sel + 1) % menu_count;
@@ -483,7 +516,15 @@ static void draw_feed(void)
     display_draw_hline(4, y, SCR_W - 8, COLOR_LIGHT_GREY);
     y += 5;
     snprintf(buf, sizeof(buf), "%5.1f", ui.feed_mm_min);
-    draw_row(y, "mm/min:", buf, COLOR_YELLOW, true);
+    draw_row(y, "V_set:", buf, COLOR_YELLOW, true);
+    // 4e: Rzeczywista prędkość (V_act) obok V_set
+    {
+        uint32_t _spd = stepper_get_speed();
+        if (_spd > 0) {
+            snprintf(buf, sizeof(buf), "V:%.0f", (float)_spd / axis_get_steps_per_mm(g_axis_z) * 60.0f);
+            display_draw_string(UI_VALUE_X + 40, y + UI_TEXT_Y, buf, COL_OK, COLOR_BLACK, 1);
+        }
+    }
     y += ROW_H;
     draw_row(y, "Kierunek:", (ui.feed_dir == STEPPER_DIR_CW) ? "CW >" : "CCW <", COL_WARN, false);
     y += ROW_H;
@@ -782,6 +823,10 @@ static void handle_settings(encoder_event_t evt)
 
 #include "screen_backlight.inc"
 
+#include "screen_gcode.inc"
+
+#include "screen_position.inc"
+
 // ------------------------------------------------------------
 //  Tablica ekranów
 // ------------------------------------------------------------
@@ -790,10 +835,12 @@ typedef void (*handle_fn_t)(encoder_event_t);
 
 static const draw_fn_t s_draw[] = {
     draw_main, draw_menu, draw_jog, draw_feed, draw_spindle,
-    draw_settings, draw_els, draw_axis_x, draw_homing, draw_backlight};
+    draw_settings, draw_els, draw_axis_x, draw_homing, draw_backlight,
+    draw_gcode, draw_position};
 static const handle_fn_t s_handle[] = {
     handle_main, handle_menu, handle_jog, handle_feed, handle_spindle,
-    handle_settings, handle_els, handle_axis_x, handle_homing, handle_backlight};
+    handle_settings, handle_els, handle_axis_x, handle_homing, handle_backlight,
+    handle_gcode, handle_position};
 
 // ------------------------------------------------------------
 //  E-STOP callback z ISR spindle

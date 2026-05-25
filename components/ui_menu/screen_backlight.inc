@@ -47,7 +47,7 @@ static void bl_save_nvs(void)
 
 static void draw_backlight(void)
 {
-    draw_header("PODSWIETLENIE", rgb565(80, 40, 0));
+    draw_header("PODSWIETLENIE", COL_HDR_BACKLIGHT);
     display_fill_rect(0, HEADER_H, SCR_W, CONTENT_H + 2, COLOR_BLACK);
 
     int16_t y = CONTENT_Y + 4;
