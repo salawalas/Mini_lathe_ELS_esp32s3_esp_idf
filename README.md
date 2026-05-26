@@ -32,6 +32,7 @@ i glowica podzialowa VEVOR BS4-KP100-57.
 | Przekladnia wrzeciona | Glowica VEVOR BS4-KP100-57, slimakowa 1:6 |
 | Zasilacz | 36V / 5.6A / 350VA SWPS | Active PFC Mean Well |
 | Bezpieczenstwo | Modul MOSFET PWM (5-55V, do 100A) odcina zasilanie DM556; E-STOP grzybkowy |
+| Buzzer | Pasywny buzzer 4 kHz (GPIO48), PWM LEDC, sygnaly OK/WARN/ERROR/E-STOP |
 | SD card | FAT32 przez SPI2 (MOSI/SCLK/MISO wspoldzielone z TFT) |
 
 ---
@@ -51,7 +52,7 @@ Ustawienia wyswietlacza TFT mozna zmienic w `idf.py menuconfig`.
 | SD CS | **44** | OUT | IO44 - wolny, bez konfliktu z LED (IO48) |
 | TFT DC | **14** | OUT | Data/Command |
 | TFT RST | **9** | OUT | |
-| TFT BL | **38** | OUT | PWM LEDC do podswietlenia |
+| TFT BL | **19** | OUT | PWM LEDC do podswietlenia |
 
 ### Enkoder obrotowy + przyciski
 
@@ -103,6 +104,7 @@ Ustawienia wyswietlacza TFT mozna zmienic w `idf.py menuconfig`.
 |---|---|---|
 | MOSFET IN | **17** | HIGH = zasilanie DM556 wlaczone, przez MOSFET PWM |
 | E-STOP NO | **18** | Zewn. 4.7k pull-up -> GND przy wcisnieciu (NEGEDGE ISR) |
+| BUZZER | **48** | Pasywny buzzer 4 kHz PWM (LEDC) |
 
 > **Schemat Common Anode (BC846):**
 > `5V -> [330 Ohm] -> PUL+/DIR+/ENA+`
@@ -154,7 +156,7 @@ mini_lathe_v6/
 ├── README.md
 ├── main/
 │   ├── CMakeLists.txt
-│   ├── main.c                    # init, logo+splash+homing warning, peryferia, ELS, UI, SD
+│   ├── main.c                    # init, logo+splash+homing warning, peryferia, ELS, UI, SD, G-code, buzzer
 │   └── idf_component.yml         # nopnop2002/ili9340
 ├── managed_components/
 │   └── nopnop2002__ili9340/      # driver TFT + FONTX
@@ -162,18 +164,25 @@ mini_lathe_v6/
 │   ├── display/                  # wrapper TFT, 7 fontow, SPIFFS, bitmapy
 │   │   ├── font/                 # 8 plikow (7x FNT + logo.raw)
 │   │   └── include/
-│   ├── encoder/                  # PCNT kwadraturowy + GPIO ISR (4 przyciski)
-│   ├── axis/                     # generyczna os (Z i X), GPTimer, rampa
-    │   ├── stepper/                  # kompat. wsteczna dla osi Z (wrapper na axis)
-│   ├── spindle/                  # wrzeciono krokowe + MOSFET + E-STOP ISR
-│   ├── motion/                   # ELS (Electronic Leadscrew), 19 presetow
-│   ├── limits/                   # krancowki + homing
-│   ├── gcode/                    # parser G-code
+│   ├── encoder/                  # PCNT kwadraturowy + GPIO ISR (4 przyciski + enkoder)
+│   ├── axis/                     # generyczna os (Z i X), GPTimer, rampa accel/decel
+│   │   └── include/
+│   ├── stepper/                  # kompat. wsteczna dla osi Z (wrapper inline na axis)
+│   ├── spindle/                  # wrzeciono krokowe + MOSFET + E-STOP ISR + callback
+│   ├── motion/                   # ELS (Electronic Leadscrew), 31 presetow (metryczne/imperial/BSP/NPT)
+│   ├── limits/                   # krancowki + homing + blokada kierunku
+│   ├── gcode/                    # parser G-code (G0/G1/G4/G20/G21/G90/G91/G92/M3/M4/M5/M30)
 │   ├── sdcard/                   # karta SD FATFS przez SPI2
-│   └── ui_menu/                  # 10 ekranow UI, nawigacja enkoderem
+│   ├── homing_state/             # globalny stan bazowania (g_homed)
+│   ├── buzzer/                   # sygnalizator dzwiekowy PWM 4 kHz (GPIO48)
+│   └── ui_menu/                  # 12 ekranow UI, nawigacja enkoderem, NVS
 │       ├── homing_state.c/.h     # globalny stan bazowania (g_homed)
 │       ├── screen_homing.inc     # ekran bazowania osi
-│       └── screen_backlight.inc  # ekran regulacji podswietlenia
+│       ├── screen_backlight.inc  # ekran regulacji podswietlenia
+│       ├── screen_els.inc        # ekran ELS gwintowania
+│       ├── screen_gcode.inc      # ekran G-code z karty SD
+│       ├── screen_axis_x.inc     # ekran osi X (JOG / AUTO / CYKL ZX)
+│       └── screen_position.inc   # ekran pozycji i presetow (NVS)
 └── tools/
     ├── generate_logo.py          # generuje testowe logo 48x48
     └── png_to_raw.py             # konwertuje PNG -> raw RGB565
@@ -183,16 +192,18 @@ mini_lathe_v6/
 
 | # | Ekran | Dostep | Funkcja |
 |---|-------|--------|---------|
-|   | Menu | SW krotko | Lista trybow |
-| 1 | Dashboard | start | Live: RPM, Z pos, X pos, stany osi, status bazowania |
-| 2 | JOG Z | Menu | Enkoder = krok osi Z |
-| 3 | Posuw AUTO | Menu | Ciagly posuw osi Z |
-| 4 | Wrzeciono | Menu | Start/stop, RPM, kierunek |
-| 5 | Ustawienia | Menu | Skok sruby, mikrostepping |
-| 6 | ELS | Menu | Gwintowanie, 19 presetow srubowych/calowych |
-| 7 | Os X | Menu | JOG X, AUTO X, cykl ZX |
+|   | Menu | SW krotko | Lista 11 trybow |
+| 1 | Dashboard | start | Live: RPM, Z pos, X pos, stany osi, status bazowania, SD, heap |
+| 2 | JOG Z | Menu | Enkoder = krok osi Z, 5 rozmiarow kroku, regulacja predkosci % |
+| 3 | Posuw AUTO | Menu | Ciagly posuw osi Z, V_set/V_act, kierunek CW/CCW |
+| 4 | Wrzeciono | Menu | Start/stop, RPM, kierunek FWD/REV, zasilanie, E-STOP reset |
+| 5 | Ustawienia | Menu | Skok sruby, mikrostepping, max RPM (NVS) |
+| 6 | ELS | Menu | Gwintowanie, 31 presetow (metryczne/imperial/BSP/NPT), X glebokosc |
+| 7 | Os X | Menu | JOG X, AUTO X, CYKL ZX (automatyczny cykl dosuwu) |
 | 8 | Bazowanie osi | Menu | Homing Z i X, podejscie do krancowek |
-| 9 | Podswietlenie | Menu | Regulacja jasnosci TFT (0-100%) |
+| 9 | Podswietlenie | Menu | Regulacja jasnosci TFT (0-100%), zapis NVS |
+| 10 | G-code (SD) | Menu | Lista plikow, progress bar, pauza/stop, wykonanie linii |
+| 11 | Pozycja / Presety | Menu | Ustaw Z/X, 3 zapisywalne presety pozycji (NVS) |
 
 ---
 
@@ -202,40 +213,108 @@ mini_lathe_v6/
 1. **Logo** — pelnoekranowa bitmapa (jesli `/spiffs/logo.raw` istnieje) lub tekst "Mini Lathe v6.1" — 5s
 2. **Splash** — czarny ekran z niebieskim paskiem: ESP32-S3 / IDF 5.5 / 3x DM556+NEMA23 / ELS+E-STOP — 5s
 3. **Ostrzezenie o braku bazowania** — migajacy czerwony ekran "! UWAGA ! Brak bazowania osi!" — 5s
-4. Inicjalizacja: NVS → enkoder → osie Z/X → wrzeciono → ELS → UI (dashboard) → SD card (nieblokujaco)
+4. Inicjalizacja: NVS → enkoder → osie Z/X → wrzeciono → ELS → UI (dashboard) → SD card (nieblokujaco) → G-code parser
+
+### Sygnalizacja dzwiekowa (buzzer)
+- Pasywny buzzer 4 kHz na GPIO48, sterowany PWM LEDC
+- 4 wzorce sygnalow (nieblokujace, task):
+  - **OK** — krotki pojedynczy (50 ms)
+  - **WARN** — dwa krotkie (50+80+50 ms)
+  - **ERROR** — dlugi (400 ms)
+  - **E-STOP** — trzy krotkie + dlugi (awaria)
+- Wywolywany automatycznie: E-STOP, koniec ELS, blad, potwierdzenia UI
 
 ### Wrzeciono
 - Naped krokowy przez przekladnie slimakowa 1:6
 - Rampa start/stop 3000 ms, regulacja RPM 10-120
 - Kierunek FWD/REV
-- Rejestracja pozycji katowej (do ELS)
+- Rejestracja pozycji katowej (do ELS) — licznik krokow absolutny
 - Tryb awaryjny: MOSFET odcina 36V fizycznie
+- E-STOP ISR: natychmiastowe zatrzymanie timera + odciecie zasilania
+- Rejestracja callbacka obrotu (dla ELS) i E-STOP (dla UI)
+- Mozliwosc ustawienia max RPM z UI (NVS)
 
 ### ELS (Electronic Leadscrew)
-- **19 presetow gwintow** — metryczne (M3-M12, M14, M16, M20, M24), Trapezowe (Tr10-Tr16) i calowe (1/4"-1/2")
+- **31 presetow gwintow**:
+  - Metryczne: M3-M12, M14, M16, M20, M24 (11)
+  - Trapezowe: Tr10, Tr12, Tr16 (3)
+  - Calowe UNC: 1/4-20, 5/16-18, 3/8-16, 1/2-13 (4)
+  - Calowe UNF: 1/4-28 (1)
+  - **BSP (British Standard Pipe)**: G 1/8-28, G 1/4-19, G 3/8-19, G 1/2-14, G 3/4-14, G 1-11 (6)
+  - **NPT (National Pipe Taper)**: 1/8-27, 1/4-18, 3/8-18, 1/2-14, 3/4-14 (6)
 - Synchronizacja enkoder wrzeciona -> posuw Z przez Bresenham (ISR-safe task)
 - Wieloprzejscia (1-20 przejsc) z automatycznym dosuwem X
-- Pomiar Z_start / Z_end z enkodera
+- **5 parametrow konfiguracji**: preset gwintu, Z_start, Z_end, liczba przejsc, glebokosc X na przejscie (krok 0.02 mm, zakres 0.02–1.00 mm)
+- **Ekran potwierdzenia** przed startem — podglad wszystkich parametrow
+- BTN3 = zapisz Z_start, BTN3 (dlugi) = zapisz Z_end z biezacej pozycji
 - Zatrzymanie awaryjne: BTN1 LONG = E-STOP
+- Podczas pracy: aktualny stan, przejscie, Z, RPM, status synchronizacji, liczba krokow, **szacowany czas pozostaly**
 
 ### Osie Z i X
 - GPTimer z rampa akceleracji/deceleracji (20000 steps/s^2)
-- JOG krokowy (0.01 / 0.1 / 1.0 mm) i posuw ciagly
-- Move do pozycji absolutnej
+- 5 stanow: IDLE, RUN, ACCEL, DECEL, ERROR
+- JOG krokowy (1/8/16/80/160 krokow) z regulacja predkosci (10-100%)
+- Posuw ciagly z regulacja V_set (10-500 mm/min), wyswietlana V_act
+- Move do pozycji absolutnej (axis_move_to_mm)
+- Reset pozycji (SW dlugi w JOG = zero)
 - Krancowki + pelny homing UI (Menu > Bazowanie osi)
 - Blokada ruchu przed zhomowaniem — dozwolony tylko kierunek do krancowki home
 
+### Os X — tryby rozszerzone
+- **JOG X**: reczne pozycjonowanie enkoderem, 5 rozmiarow kroku
+- **AUTO X**: zadaj cel absolutny + predkosc, BTN3 = wykonaj
+- **CYKL ZX**: automatyczny cykl dosuwu:
+  - Dosun X o zadana glebokosc na przejscie
+  - Przejazd Z od start do end z predkoscia robocza
+  - Powrot Z do startu
+  - Powtorz dla N przejsc
+  - Flaga abort (BTN1 = STOP cyklu)
+
+### Ekran Pozycja / Presety
+- Edycja i ustawianie pozycji Z i X
+- 3 zapisywalne **presety pozycji** (P1, P2, P3) w NVS
+- BTN3 = zastosuj wartosc (Z lub X)
+- SW=skocz do presetu, BTN3=zapisz biezaca pozycje do presetu
+- Trwale przez resek — zapisane w NVS
+
+### Dashboard (ekran glowny)
+- RPM: aktualne / zadane + kolor (zielony = at speed, pomaranczowy = ramping)
+- Kierunek wrzeciona + status zasilania (>ON / <OF)
+- Pozycja Z: X.XX mm + stan osi (IDL/RUN/ACC/DEC/ERR)
+- Status bazowania per-os: **[OK]** lub **[--]**
+- Pozycja X (jesli os X zainicjowana)
+- **Ostrzezenie o krancowkach**: czerwony pasek "!!! KRANCOWKA !!!" gdy wyzwolona
+- Rzeczywista predkosc posuwu: V: X.X mm/min
+- **Status karty SD**: SD:OK / SD:--
+- **Wolna pamiec heap**: XXXX K
+- Czerwony krzyzyk "X" w stopce gdy brak bazowania
+- Auto-odswiezanie co 200 ms
+
 ### Bezpieczenstwo
-- **E-STOP**: styk NC grzybka odcina 36V sprzetowo; styk NO -> GPIO18 -> ISR wylacza MOSFET + zatrzymuje timery. Reset przez przycisk.
+- **E-STOP**: styk NC grzybka odcina 36V sprzetowo; styk NO -> GPIO18 -> ISR wylacza MOSFET + zatrzymuje timery. Reset przez przycisk BTN2.
 - **MOSFET PWM**: odcina zasilanie DM556 programowo (IO17)
 - **Watchdog**: ESP32 task WDT 10s
 - **Krancowki**: blokada ruchu w kierunku aktywnego limitu; ISR natychmiastowe zatrzymanie osi
+- **E-STOP w UI**: dostepny z kazdego ekranu (BTN1 LONG)
+- **Sygnal dzwiekowy E-STOP**: 3 krotkie + 1 dlugi beep
 
 ### Karta SD
 - FAT32 przez SPI2 (wspoldzielona magistrala z TFT)
 - Listowanie plikow G-code (.nc, .gco, .gcd, .txt, .g)
 - Odczytywanie zawartosci plikow
-- Info o pojemnosci
+- Info o pojemnosci (calkowita MB, wolna MB)
+- Wykrywanie obecnosci — dashboard pokazuje SD:OK/SD:--
+
+### G-code
+- Parser G-code: G0, G1, G4, G20, G21, G90, G91, G92, M3, M4, M5, M30
+- S-word (predkosc wrzeciona)
+- Wykonywanie z karty SD z **paskiem postepu** (0-100%)
+- Pauza / wznowienie (BTN2 w trakcie wykonania)
+- MDI (exec pojedynczej linii) przez `gcode_exec_line()`
+- Przeliczanie jednostek cal <-> mm
+- Obsluga komentarzy (; i ())
+- Wykrywanie krancowek przed ruchem
+- Obsluga bledow z komunikatem
 
 ### Wyswietlacz
 - Obsluga wielu modeli TFT (menuconfig): ST7735, ILI9340, ILI9341, ST7789, ST7796
@@ -243,12 +322,18 @@ mini_lathe_v6/
 - SPIFFS ~14.5 MB na fonty i bitmapy
 - Rysowanie bitmap w formacie raw RGB565 (z RAM i z SPIFFS)
 - Framebuffer (opcjonalnie, przez menuconfig)
-- Regulacja podswietlenia PWM (ekran Podswietlenie)
+- Regulacja podswietlenia PWM (ekran Podswietlenie + zapis NVS)
+- **Adaptacyjne layouty UI** — wszystkie ekrany skaluja sie do rozdzielczosci (160x128 do 480x320)
+- **Kompatybilnosc display_compat.h** — mapowanie scale->font dla starszego API
 
-### G-code
-- Parser G-code (G0, G1, G4, G20, G21, G90, G91, G92, M3, M4, M5, M30 itp.)
-- Wykonywanie z karty SD
-- MDI (exec pojedynczej linii)
+### Ustawienia (NVS)
+Ustawienia przechowywane w NVS (trwale przez resek):
+- Skok sruby Z (mm)
+- Skok sruby X (mm)
+- Mikrostepping (logowany)
+- Max RPM wrzeciona
+- Jasnosc podswietlenia (0-100%)
+- 3 presety pozycji (Z+X)
 
 ---
 
@@ -326,6 +411,7 @@ Pliki `.raw` wrzucone do `components/display/font/` sa automatycznie pakowane do
    - MOSFET IN = LOW (odcina DM556#1 programowo)
    - Wrzeciono -> STOP natychmiastowe
    - Os Z/Os X -> STOP natychmiastowe
+   - Buzzer -> sygnal E-STOP (3 krotkie + dlugi)
 3. **Reset**: zwolnij grzybek -> przejdz do ekranu Wrzeciono/Dashboard -> BTN2 = reset E-STOP
 4. Zasilanie przywracane dopiero po jawnym `START`
 
@@ -346,6 +432,7 @@ Pliki `.raw` wrzucone do `components/display/font/` sa automatycznie pakowane do
 - **IO20** - USB_D+, uzywany jako ENA wrzeciona. Aktywny tylko gdy USB nieaktywne. Przy debugowaniu przez USB JTAG/Serial - brak konfliktu.
 - **IO46** - strapping pin (log level), uzywany jako X_MIN. OK po boot.
 - **IO38** - BUILTIN LED na DevKitC-1. PWM podswietlenia TFT bedzie migac dioda na plytce.
+- **IO48** - BUILTIN LED / wolny GPIO. Uzywany jako buzzer PWM. Dioda nie bedzie migac.
 - **Kondensator 1000uF/63V** przy zaciskach zasilania DM556 - **zalecany**.
 
 ---
@@ -365,8 +452,8 @@ Aby włączyć rzeczywiste krańcówki i homing:
    - `X_MIN` = IO46
    - `X_MAX` = IO45
 
-2. **Odkomentuj** `limits_init()` w `main/main.c` (linia ~212) oraz w
-   `components/ui_menu/screen_homing.inc` wywołania `limits_home_axis()` (linie ~157-159).
+2. **Odkomentuj** `limits_init()` w `main/main.c` oraz w
+   `components/ui_menu/screen_homing.inc` wywołania `limits_home_axis()`.
 
 3. **Skompiluj i flashuj** — `idf.py build flash`.
 
@@ -385,12 +472,8 @@ Ekran ELS ma teraz 5 parametrów (przełączanych przyciskiem SW):
 4. Ilość przejść
 5. **Głębokość X na przejście** (krok 0.02 mm, zakres 0.02–1.00 mm)
 
-`depth_per_pass` jest teraz przekazywany do `els_config_t` — oś X będzie dosuwana
+`depth_per_pass` jest przekazywany do `els_config_t` — oś X będzie dosuwana
 o zadaną wartość przed każdym kolejnym przejściem. Domyślnie 0.10 mm/przejście.
 
-### Uwaga o podwójnej definicji `g_homed`
-
-Naprawiono błąd linkera: `volatile bool g_homed` był definiowany jednocześnie w
-`ui_menu.c` i `homing_state.c`. Definicja w `ui_menu.c` została usunięta —
-symbol pochodzi wyłącznie z `homing_state.c`. Przy aktualizacji z wcześniejszej wersji
-należy usunąć duplikat z własnych modyfikacji.
+Przed startem ELS pojawia się ekran potwierdzenia z podglądem wszystkich parametrów.
+BTN3 zapisuje Z_start z bieżącej pozycji, BTN3 (długi) zapisuje Z_end.
