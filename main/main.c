@@ -24,6 +24,8 @@
 #include "gcode.h"
 #include "buzzer.h"
 #include "esp_task_wdt.h"
+#include "wifi_server.h"
+#include "ble_server.h"
 #include <stdio.h>
 
 static const char *TAG = "MAIN";
@@ -270,6 +272,39 @@ void app_main(void)
     // ── G-code parser ────────────────────────────────────────
     gcode_init();
     ESP_LOGI(TAG, "Parser G-code gotowy.");
+
+    // ── WiFi / BLE – warunkowo przez NVS (Ustawienia) ─────
+    {
+        uint8_t wifi_en = 1, ble_en = 0;
+        nvs_handle_t h;
+        if (nvs_open("lathe", NVS_READONLY, &h) == ESP_OK) {
+            float f = 1.0f; size_t sz = sizeof(f);
+            if (nvs_get_blob(h, "wifi_en", &f, &sz) == ESP_OK) wifi_en = (f > 0.5f) ? 1 : 0;
+            f = 0.0f; sz = sizeof(f);
+            if (nvs_get_blob(h, "ble_en", &f, &sz) == ESP_OK) ble_en = (f > 0.5f) ? 1 : 0;
+            nvs_close(h);
+        }
+
+        if (wifi_en) {
+            esp_err_t ret = wifi_server_init();
+            if (ret == ESP_OK)
+                ESP_LOGI(TAG, "WiFi/HTTP OK → http://192.168.4.1");
+            else
+                ESP_LOGW(TAG, "WiFi init failed: %s", esp_err_to_name(ret));
+        } else {
+            ESP_LOGI(TAG, "WiFi wylaczone (NVS wifi_en=0)");
+        }
+
+        if (ble_en) {
+            esp_err_t ret = ble_server_init();
+            if (ret == ESP_OK)
+                ESP_LOGI(TAG, "BLE OK → 'MiniLathe'");
+            else
+                ESP_LOGW(TAG, "BLE init failed: %s", esp_err_to_name(ret));
+        } else {
+            ESP_LOGI(TAG, "BLE wylaczone (NVS ble_en=0)");
+        }
+    }
 
     // ── Task Watchdog ──────────────────────────────────────
     // TWDT już zainicjalizowany przez ESP-IDF (CONFIG_ESP_TASK_WDT_EN=y).

@@ -4,12 +4,14 @@
 
 typedef enum {
     SCREEN_MAIN=0, SCREEN_MENU, SCREEN_JOG, SCREEN_FEED,
-    SCREEN_SPINDLE, SCREEN_SETTINGS, SCREEN_ELS, SCREEN_AXIS_X,
+    SCREEN_SPINDLE, SCREEN_ELS, SCREEN_AXIS_X,
     SCREEN_HOMING,      // Bazowanie osi
-    SCREEN_BACKLIGHT,   // Podsiwetlenie
+    SCREEN_BACKLIGHT,   // Podsiwetlenie (podmenu Ust. systemowych)
     SCREEN_GCODE,       // G-code z karty SD
     SCREEN_POSITION,    // Pozycja / presety osi
     SCREEN_DRO,         // DRO – duże cyfry Z/X
+    SCREEN_SETTINGS_LATHE,   // Ustawienia tokarki
+    SCREEN_SETTINGS_SYSTEM,  // Ustawienia systemowe (podmenu)
     SCREEN_COUNT
 } screen_id_t;
 

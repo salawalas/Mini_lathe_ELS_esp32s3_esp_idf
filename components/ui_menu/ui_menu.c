@@ -135,23 +135,24 @@ static const char *MENU_NAMES[] = {
     "Jog osi Z",
     "Posuw Z",
     "Wrzeciono",
-    "Ustawienia",
     "ELS gwint",
     "Os X dosuw",
     "Bazowanie osi",
-    "Podswietlenie",
     "G-code (SD)",
     "Pozycja / Presety",
     "DRO (duze cyfry)",
+    "Ustawienia tokarki",
+    "Ustawienia systemowe",
     // SCREEN_MENU (ostatni) nie pojawia sie na liscie – sluzy jako sentinel
 };
 
 // Order of screens presented in the menu (maps to screen_id_t)
 static const screen_id_t MENU_ORDER[] = {
     SCREEN_MAIN, SCREEN_JOG, SCREEN_FEED, SCREEN_SPINDLE,
-    SCREEN_SETTINGS, SCREEN_ELS, SCREEN_AXIS_X,
-    SCREEN_HOMING, SCREEN_BACKLIGHT, SCREEN_GCODE,
-    SCREEN_POSITION, SCREEN_DRO, SCREEN_MENU};
+    SCREEN_ELS, SCREEN_AXIS_X,
+    SCREEN_HOMING, SCREEN_GCODE,
+    SCREEN_POSITION, SCREEN_DRO,
+    SCREEN_SETTINGS_LATHE, SCREEN_SETTINGS_SYSTEM, SCREEN_MENU};
 
 // Sprawdź czy MENU_NAMES zgadza się z MENU_ORDER (minus sentinel SCREEN_MENU)
 _Static_assert(
@@ -174,13 +175,17 @@ static void draw_footer(void)
 {
     display_fill_rect(0, FOOTER_Y, SCR_W, FOOTER_H, COL_FOOTER);
     display_draw_hline(0, FOOTER_Y - 1, SCR_W, COLOR_LIGHT_GREY);
-    // Krzyżyk ostrzegawczy – brak bazowania osi
+    // Wskaźnik homingu – czerwony X gdy brak, zielony ✓ gdy OK
     if (!g_homed) {
-        // Czerwony X nad stopką – FONT_MD (24px) wycentrowany pionowo nad FOOTER
         int hx = FOOTER_Y - FONT_MD_H - 1;
         display_fill_rect(SCR_W - FONT_MD_W - 2, hx, FONT_MD_W + 2, FONT_MD_H, rgb565(120, 0, 0));
         display_string(SCR_W - FONT_MD_W - 1, hx,
                        "X", FONT_MD, rgb565(255, 60, 60), 0xFFFF);
+    } else {
+        int hx = FOOTER_Y - FONT_MD_H - 1;
+        display_fill_rect(SCR_W - FONT_MD_W - 2, hx, FONT_MD_W + 2, FONT_MD_H, rgb565(0, 80, 0));
+        display_string(SCR_W - FONT_MD_W - 1, hx,
+                       "H", FONT_MD, rgb565(0, 255, 0), 0xFFFF);
     }
     const char *hints[] = {
         "SW=menu",                    // SCREEN_MAIN
@@ -188,14 +193,15 @@ static void draw_footer(void)
         "ENC=krok SW=go",            // SCREEN_JOG
         "BTN3=start BTN1=stop",      // SCREEN_FEED
         "ENC=RPM BTN3=start",        // SCREEN_SPINDLE
-        "ENC=val SW=save",           // SCREEN_SETTINGS
         "SW>>>=START",               // SCREEN_ELS
         "ENC=jog SW=tryb",           // SCREEN_AXIS_X
         "SW>>>=START",               // SCREEN_HOMING
-        "ENC=jasn SW=zapisz",        // SCREEN_BACKLIGHT
+        "ENC=jasn SW=zapisz",        // SCREEN_BACKLIGHT (podmenu)
         "ENC=plik BTN3=start",       // SCREEN_GCODE
         "ENC=val BTN3=ustaw",        // SCREEN_POSITION
         "ENC=jasn SW=menu BTN3=0",   // SCREEN_DRO
+        "ENC=val BTN3=zapisz",       // SCREEN_SETTINGS_LATHE
+        "SW=wybierz BTN2=wroc",      // SCREEN_SETTINGS_SYSTEM
     };
     if (ui.uptime_ms < ui.notify_until_ms && ui.notify_msg[0])
     {
@@ -727,7 +733,7 @@ static void handle_spindle(encoder_event_t evt)
 }
 
 // ------------------------------------------------------------
-//  EKRAN: SETTINGS
+//  EKRAN: SETTINGS LATHE (mechaniczne ustawienia tokarki)
 // ------------------------------------------------------------
 static struct
 {
@@ -743,7 +749,6 @@ static struct
 };
 #define SET_COUNT 5
 
-// ── NVS persistence ──
 static const char *NVS_KEYS[] = {"lead_z", "lead_x", "ustep", "max_v", "rpm_max"};
 
 static void settings_nvs_load(void)
@@ -777,9 +782,9 @@ static void settings_nvs_save(void)
     ESP_LOGI(TAG, "Ustawienia zapisane w NVS");
 }
 
-static void draw_settings(void)
+static void draw_settings_lathe(void)
 {
-    draw_header("USTAWIENIA", COL_HDR_SET);
+    draw_header("USTAWIENIA TOKARKI", COL_HDR_SET);
     display_fill_rect(0, HEADER_H, SCR_W, CONTENT_H + 2, COLOR_BLACK);
     char buf[16];
     int16_t y = CONTENT_Y;
@@ -790,12 +795,12 @@ static void draw_settings(void)
         y += ROW_H;
     }
     display_draw_hline(4, y + 2, SCR_W - 8, COLOR_LIGHT_GREY);
-    display_draw_string(4, y + 5, "ENC=val SW=next BTN3=save", COLOR_LIGHT_GREY, COLOR_BLACK, 1);
+    display_draw_string(4, y + 5, "ENC=val SW=next BTN3=zapisz", COLOR_LIGHT_GREY, COLOR_BLACK, 1);
     draw_footer();
     display_flush();
 }
 
-static void handle_settings(encoder_event_t evt)
+static void handle_settings_lathe(encoder_event_t evt)
 {
     if (ui_estop_handler(evt)) return;
     switch (evt)
@@ -803,16 +808,12 @@ static void handle_settings(encoder_event_t evt)
     case ENCODER_EVT_CW:
         s_set[ui.settings_sel].value += s_set[ui.settings_sel].step;
         if (s_set[ui.settings_sel].value > s_set[ui.settings_sel].max_val)
-        {
             s_set[ui.settings_sel].value = s_set[ui.settings_sel].max_val;
-        }
         break;
     case ENCODER_EVT_CCW:
         s_set[ui.settings_sel].value -= s_set[ui.settings_sel].step;
         if (s_set[ui.settings_sel].value < s_set[ui.settings_sel].min_val)
-        {
             s_set[ui.settings_sel].value = s_set[ui.settings_sel].min_val;
-        }
         break;
     case ENCODER_EVT_SW_PRESS:
         ui.settings_sel = (ui.settings_sel + 1) % SET_COUNT;
@@ -834,6 +835,104 @@ static void handle_settings(encoder_event_t evt)
     case ENCODER_EVT_BTN2_PRESS:
         if (ui.settings_sel > 0)
             ui.settings_sel--;
+        break;
+    default:
+        break;
+    }
+}
+
+// ------------------------------------------------------------
+//  EKRAN: SETTINGS SYSTEM (podmenu: Podświetlenie, WiFi, BLE)
+// ------------------------------------------------------------
+#define SYSMENU_COUNT 3
+static const char *SYSMENU_NAMES[] = {"Podswietlenie", "WiFi", "BLE"};
+static uint8_t sysmenu_sel = 0;
+static float  sys_wifi_en = 1.0f;   // cached, loaded once from NVS
+static float  sys_ble_en  = 0.0f;
+static bool   sys_loaded   = false;
+
+static void sysmenu_load_nvs(void)
+{
+    nvs_handle_t h;
+    if (nvs_open("lathe", NVS_READONLY, &h) == ESP_OK) {
+        size_t sz = sizeof(sys_wifi_en);
+        nvs_get_blob(h, "wifi_en", &sys_wifi_en, &sz);
+        sz = sizeof(sys_ble_en);
+        nvs_get_blob(h, "ble_en", &sys_ble_en, &sz);
+        nvs_close(h);
+    }
+    sys_loaded = true;
+}
+
+static void draw_settings_system(void)
+{
+    if (!sys_loaded) sysmenu_load_nvs();
+
+    draw_header("USTAWIENIA SYSTEMOWE", COL_HDR_MENU);
+    display_fill_rect(0, HEADER_H, SCR_W, CONTENT_H + 2, COLOR_BLACK);
+
+    int16_t y = CONTENT_Y + 2;
+    char buf[24];
+    for (int i = 0; i < SYSMENU_COUNT; i++) {
+        bool sel = (i == sysmenu_sel);
+        if (i == 0)      snprintf(buf, sizeof(buf), ">");
+        else if (i == 1) snprintf(buf, sizeof(buf), "%s", sys_wifi_en > 0.5f ? "ON" : "OFF");
+        else             snprintf(buf, sizeof(buf), "%s", sys_ble_en > 0.5f ? "ON" : "OFF");
+
+        uint16_t bg = sel ? COL_SEL : COLOR_BLACK;
+        display_fill_rect(0, y, SCR_W, ROW_H, bg);
+        display_draw_string(UI_PAD_X, y + UI_TEXT_Y, SYSMENU_NAMES[i],
+                           sel ? COLOR_WHITE : COL_LABEL, bg, 1);
+        display_draw_string(UI_VALUE_X, y + UI_TEXT_Y, buf,
+                           sel ? COLOR_WHITE : COL_VAL, bg, 1);
+        y += ROW_H;
+    }
+    display_draw_hline(4, y + 2, SCR_W - 8, COLOR_LIGHT_GREY);
+    display_draw_string(4, y + 5, "SW=wybierz BTN2=powrot", COLOR_LIGHT_GREY, COLOR_BLACK, 1);
+    draw_footer();
+    display_flush();
+}
+
+static void sysmenu_save_toggle(const char *key, bool on)
+{
+    nvs_handle_t h;
+    if (nvs_open("lathe", NVS_READWRITE, &h) == ESP_OK) {
+        float v = on ? 1.0f : 0.0f;
+        nvs_set_blob(h, key, &v, sizeof(v));
+        nvs_commit(h);
+        nvs_close(h);
+    }
+}
+
+static void handle_settings_system(encoder_event_t evt)
+{
+    if (ui_estop_handler(evt)) return;
+    if (!sys_loaded) sysmenu_load_nvs();
+
+    switch (evt) {
+    case ENCODER_EVT_CW:
+        sysmenu_sel = (sysmenu_sel + 1) % SYSMENU_COUNT;
+        break;
+    case ENCODER_EVT_CCW:
+        sysmenu_sel = (sysmenu_sel == 0) ? (SYSMENU_COUNT - 1) : (sysmenu_sel - 1);
+        break;
+    case ENCODER_EVT_SW_PRESS:
+        if (sysmenu_sel == 0) {
+            backlight_screen_enter();
+            ui_menu_goto(SCREEN_BACKLIGHT);
+        } else if (sysmenu_sel == 1) {
+            sys_wifi_en = (sys_wifi_en > 0.5f) ? 0.0f : 1.0f;
+            sysmenu_save_toggle("wifi_en", sys_wifi_en > 0.5f);
+            ui_menu_notify(sys_wifi_en > 0.5f ? "WiFi ON (restart!)" : "WiFi OFF", COL_OK, 1500);
+        } else {
+            sys_ble_en = (sys_ble_en > 0.5f) ? 0.0f : 1.0f;
+            sysmenu_save_toggle("ble_en", sys_ble_en > 0.5f);
+            ui_menu_notify(sys_ble_en > 0.5f ? "BLE ON (restart!)" : "BLE OFF", COL_OK, 1500);
+        }
+        break;
+    case ENCODER_EVT_BTN2_PRESS:
+    case ENCODER_EVT_BTN2_LONG:
+        ui_menu_goto(SCREEN_MENU);
         break;
     default:
         break;
@@ -867,12 +966,14 @@ typedef void (*handle_fn_t)(encoder_event_t);
 
 static const draw_fn_t s_draw[] = {
     draw_main, draw_menu, draw_jog, draw_feed, draw_spindle,
-    draw_settings, draw_els, draw_axis_x, draw_homing, draw_backlight,
-    draw_gcode, draw_position, draw_dro};
+    draw_els, draw_axis_x, draw_homing, draw_backlight,
+    draw_gcode, draw_position, draw_dro,
+    draw_settings_lathe, draw_settings_system};
 static const handle_fn_t s_handle[] = {
     handle_main, handle_menu, handle_jog, handle_feed, handle_spindle,
-    handle_settings, handle_els, handle_axis_x, handle_homing, handle_backlight,
-    handle_gcode, handle_position, handle_dro};
+    handle_els, handle_axis_x, handle_homing, handle_backlight,
+    handle_gcode, handle_position, handle_dro,
+    handle_settings_lathe, handle_settings_system};
 
 // ------------------------------------------------------------
 //  E-STOP callback z ISR spindle

@@ -1,4 +1,4 @@
-# Mini Lathe Controller v6.1
+# Mini Lathe Controller v6.2
 
 ## Third-party components
 
@@ -15,7 +15,7 @@ i glowica podzialowa VEVOR BS4-KP100-57.
 **Mikrokontroler**: ESP32-S3-WROOM-1 N16R8 (DevKitC-1)
 **Framework**: ESP-IDF v5.5.1
 **Display**: TFT SPI ST7735 / ILI9340 / ILI9341 / ST7789 / ST7796 (modulowa obsluga przez menuconfig)
-**Komunikacja**: USB JTAG/Serial, karta SD (FATFS przez SPI2), SPIFFS na fonty i bitmapy
+**Komunikacja**: USB JTAG/Serial, karta SD (FATFS przez SPI2), SPIFFS na fonty i bitmapy, **WiFi AP + Web Server**, **BLE GATT**
 
 ---
 
@@ -169,13 +169,15 @@ mini_lathe_v6/
 │   │   └── include/
 │   ├── stepper/                  # kompat. wsteczna dla osi Z (wrapper inline na axis)
 │   ├── spindle/                  # wrzeciono krokowe + MOSFET + E-STOP ISR + callback
-│   ├── motion/                   # ELS (Electronic Leadscrew), 31 presetow (metryczne/imperial/BSP/NPT)
-│   ├── limits/                   # krancowki + homing + blokada kierunku
-│   ├── gcode/                    # parser G-code (G0/G1/G4/G20/G21/G90/G91/G92/M3/M4/M5/M30)
-│   ├── sdcard/                   # karta SD FATFS przez SPI2
-│   ├── homing_state/             # globalny stan bazowania (g_homed)
-│   ├── buzzer/                   # sygnalizator dzwiekowy PWM 4 kHz (GPIO48)
-│   └── ui_menu/                  # 12 ekranow UI, nawigacja enkoderem, NVS
+│ ├── motion/                   # ELS (Electronic Leadscrew), 30 presetow (metryczne/imperial/BSP/NPT), lewe gwinty
+│ ├── limits/                   # krancowki + homing + blokada kierunku + soft-limity
+│ ├── gcode/                    # parser G-code (G0/G1/G4/G20/G21/G90/G91/G92/M3/M4/M5/M30 + S-word inline)
+│ ├── sdcard/                   # karta SD FATFS przez SPI2
+│ ├── homing_state/             # globalny stan bazowania (g_homed)
+│ ├── buzzer/                   # sygnalizator dzwiekowy PWM 4 kHz (GPIO48)
+│ ├── wifi_server/              # WiFi AP + HTTP REST API + embedded web DRO page
+│ ├── ble_server/               # BLE GATT server (JSON telemetry + commands)
+│ └── ui_menu/                  # 13 ekranow UI, nawigacja enkoderem, NVS, screensaver
 │       ├── homing_state.c/.h     # globalny stan bazowania (g_homed)
 │       ├── screen_homing.inc     # ekran bazowania osi
 │       ├── screen_backlight.inc  # ekran regulacji podswietlenia
@@ -192,18 +194,19 @@ mini_lathe_v6/
 
 | # | Ekran | Dostep | Funkcja |
 |---|-------|--------|---------|
-|   | Menu | SW krotko | Lista 11 trybow |
-| 1 | Dashboard | start | Live: RPM, Z pos, X pos, stany osi, status bazowania, SD, heap |
+|   | Menu | SW krotko | Lista 12 trybow |
+| 1 | Dashboard | start | Live: RPM, Z pos, X pos, stany osi, status bazowania, SD, heap, wskaznik H/X |
 | 2 | JOG Z | Menu | Enkoder = krok osi Z, 5 rozmiarow kroku, regulacja predkosci % |
 | 3 | Posuw AUTO | Menu | Ciagly posuw osi Z, V_set/V_act, kierunek CW/CCW |
 | 4 | Wrzeciono | Menu | Start/stop, RPM, kierunek FWD/REV, zasilanie, E-STOP reset |
-| 5 | Ustawienia | Menu | Skok sruby, mikrostepping, max RPM (NVS) |
-| 6 | ELS | Menu | Gwintowanie, 31 presetow (metryczne/imperial/BSP/NPT), X glebokosc |
-| 7 | Os X | Menu | JOG X, AUTO X, CYKL ZX (automatyczny cykl dosuwu) |
-| 8 | Bazowanie osi | Menu | Homing Z i X, podejscie do krancowek |
-| 9 | Podswietlenie | Menu | Regulacja jasnosci TFT (0-100%), zapis NVS |
-| 10 | G-code (SD) | Menu | Lista plikow, progress bar, pauza/stop, wykonanie linii |
-| 11 | Pozycja / Presety | Menu | Ustaw Z/X, 3 zapisywalne presety pozycji (NVS) |
+| 5 | ELS | Menu | Gwintowanie, 30 presetow, lewe/prawe gwinty, pauza z retrakcja X, wskaznik gwintowy |
+| 6 | Os X | Menu | JOG X, AUTO X, CYKL ZX (automatyczny cykl dosuwu) |
+| 7 | Bazowanie osi | Menu | Homing Z i X, podejscie do krancowek |
+| 8 | G-code (SD) | Menu | Lista plikow, progress bar, pauza/stop, wykonanie linii |
+| 9 | Pozycja / Presety | Menu | Ustaw Z/X, 3 zapisywalne presety pozycji (NVS) |
+| 10 | DRO | Menu | Maksymalnie duze cyfry Z/X, regulacja jasnosci na zywo |
+| 11 | Ustawienia tokarki | Menu | Skok sruby Z/X, mikrostepping, max V, max RPM (NVS) |
+| 12 | Ustawienia systemowe | Menu | **Podmenu**: Podswietlenie, WiFi ON/OFF, BLE ON/OFF |
 
 ---
 
@@ -247,8 +250,11 @@ mini_lathe_v6/
 - **5 parametrow konfiguracji**: preset gwintu, Z_start, Z_end, liczba przejsc, glebokosc X na przejscie (krok 0.02 mm, zakres 0.02–1.00 mm)
 - **Ekran potwierdzenia** przed startem — podglad wszystkich parametrow
 - BTN3 = zapisz Z_start, BTN3 (dlugi) = zapisz Z_end z biezacej pozycji
+- **Lewe gwinty**: przełącznik PRAWY / LEWY (param_sel=5), odwraca kierunek posuwu
+- **Pauza z retrakcja**: BTN2 podczas pracy = wycofaj X o 0.5mm + zatrzymaj Z; BTN2 ponownie = wznów
+- **Wskaznik gwintowy**: pasek kata wrzeciona (0-100%)
 - Zatrzymanie awaryjne: BTN1 LONG = E-STOP
-- Podczas pracy: aktualny stan, przejscie, Z, RPM, status synchronizacji, liczba krokow, **szacowany czas pozostaly**
+- Podczas pracy: aktualny stan (IDLE/CZEKA/BIEG/POWRT/PAUZA/BLAD), przejscie, Z, RPM, status synchronizacji, liczba krokow, **szacowany czas pozostaly**
 
 ### Osie Z i X
 - GPTimer z rampa akceleracji/deceleracji (20000 steps/s^2)
@@ -295,8 +301,26 @@ mini_lathe_v6/
 - **MOSFET PWM**: odcina zasilanie DM556 programowo (IO17)
 - **Watchdog**: ESP32 task WDT 10s
 - **Krancowki**: blokada ruchu w kierunku aktywnego limitu; ISR natychmiastowe zatrzymanie osi
-- **E-STOP w UI**: dostepny z kazdego ekranu (BTN1 LONG)
+- **Soft-limity**: programowe ograniczniki ruchu Z/X aktywne po zhomowaniu (nawet bez fizycznych krancowek)
+- **E-STOP wszedzie**: scentralizowany handler — dziala na wszystkich 13 ekranach (wlacznie z Menu i Ustawieniami)
 - **Sygnal dzwiekowy E-STOP**: 3 krotkie + 1 dlugi beep
+- **Limit predkosci**: gorne ograniczenie w `axis_run()` chroni przed przekroczeniem max predkosci
+- **Wygaszacz ekranu**: auto-dim do 15% po 60s bezczynnosci (nieaktywny podczas E-STOP)
+
+### WiFi / Web Server
+- **Tryb**: Access Point — ESP32 tworzy wlasna siec
+- **SSID / haslo**: konfigurowalne w `wifi_server.c` lub NVS (`wifi_ssid` / `wifi_pass`)
+- **Szyfrowanie**: WPA2-PSK (wymuszane)
+- **Strona DRO**: `http://192.168.4.1` — pelny podglad Z/X/RPM + sterowanie (Jog, Spindle, E-STOP)
+- **REST API**: `/api/status` (JSON), `/api/jog`, `/api/spindle`, `/api/estop`
+- **Wlaczanie/wylaczanie**: Ustawienia systemowe → WiFi ON/OFF (wymaga restartu)
+
+### BLE (Bluetooth Low Energy)
+- **GATT serwer**: UUID serwisu `0x00FF`
+- **DRO characteristic** (`0xFF01`): read + notify — JSON `{"z":0.00,"x":0.00,"rpm":0,"estop":0,"homed":0,"spindle":0}`
+- **CMD characteristic** (`0xFF02`): write — komendy JSON `{"cmd":"jog","axis":"Z","steps":10}`
+- **MAC**: widoczny w logu boot (`Bluetooth MAC: 44:1b:f6:d3:71:6e`)
+- **Wlaczanie/wylaczanie**: Ustawienia systemowe → BLE ON/OFF (wymaga restartu, domyslnie OFF)
 
 ### Karta SD
 - FAT32 przez SPI2 (wspoldzielona magistrala z TFT)
@@ -324,16 +348,15 @@ mini_lathe_v6/
 - Framebuffer (opcjonalnie, przez menuconfig)
 - Regulacja podswietlenia PWM (ekran Podswietlenie + zapis NVS)
 - **Adaptacyjne layouty UI** — wszystkie ekrany skaluja sie do rozdzielczosci (160x128 do 480x320)
+- **Adaptacyjne fonty** — `FONT_LABEL` / `FONT_VALUE` / `FONT_HEADER` zalezne od `DISP_H` (FONT_LG na duzych ekranach)
 - **Kompatybilnosc display_compat.h** — mapowanie scale->font dla starszego API
 
 ### Ustawienia (NVS)
 Ustawienia przechowywane w NVS (trwale przez resek):
-- Skok sruby Z (mm)
-- Skok sruby X (mm)
-- Mikrostepping (logowany)
-- Max RPM wrzeciona
-- Jasnosc podswietlenia (0-100%)
-- 3 presety pozycji (Z+X)
+- **Tokarka**: Skok sruby Z (mm), Skok sruby X (mm), Mikrostepping, Max predkosc Z (mm/min), Max RPM wrzeciona
+- **Systemowe**: WiFi ON/OFF, BLE ON/OFF, SSID, haslo WiFi
+- **Podswietlenie**: Jasnosc (0-100%)
+- **Presety**: 3 presety pozycji (Z+X)
 
 ---
 
@@ -342,6 +365,9 @@ Ustawienia przechowywane w NVS (trwale przez resek):
 ```bash
 # Konfiguracja (model TFT, piny, rozdzielczosc)
 idf.py menuconfig
+# Wymagane opcje:
+#   Component config → Wi-Fi → [*] Wi-Fi
+#   Component config → Bluetooth → [*] Bluetooth → Bluedroid → [*] GATT server
 
 # Budowanie (kompiluje + tworzy obraz SPIFFS)
 idf.py build
@@ -353,7 +379,7 @@ idf.py -p COMxx flash
 idf.py -p COMxx monitor
 ```
 
-`sdkconfig.defaults` zawiera prekonfiguracje dla ESP32-S3: QIO 80MHz, 16MB flash, 8MB PSRAM, USB JTAG console, task WDT 10s, SPIFFS partition table.
+`sdkconfig.defaults` zawiera prekonfiguracje dla ESP32-S3: QIO 80MHz, 16MB flash, 8MB PSRAM, task WDT 10s, SPIFFS, **WiFi AP**, **BLE GATT**.
 
 ---
 
@@ -399,8 +425,9 @@ Pliki `.raw` wrzucone do `components/display/font/` sa automatycznie pakowane do
 - **Nowe fonty** - dowolny FONTX, dodaj do katalogu, zaktualizuj `FONT_PATHS[]`, `g_font[]` i definicje w `display.h`
 - **Nowe ekrany UI** - dodaj `screen_xxx.inc`, zarejestruj w `ui_menu.c` i `screen_id_t`
 - **Nowe presety ELS** - rozszerz tablice `ELS_THREAD_PRESETS` w `components/motion/motion.c`
-- **Bluetooth / WiFi** - ESP32-S3 ma wbudowane BLE + WiFi
-- **Joystick / pedal** - dodaj jako kolejny przycisk w `encoder.c`
+- **WiFi / Web Server** — juz zaimplementowane (AP + REST API + embedded DRO page)
+- **Bluetooth BLE** — juz zaimplementowane (GATT server, JSON telemetry + komendy)
+- **Joystick / pedal** — dodaj jako kolejny przycisk w `encoder.c`
 
 ---
 
