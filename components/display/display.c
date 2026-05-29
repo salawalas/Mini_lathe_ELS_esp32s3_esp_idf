@@ -287,5 +287,5 @@ void display_draw_bitmap_file(int x, int y, const char *spiffs_path)
     if (rd > 0) display_draw_bitmap(x, y, bmp_w, bmp_h, buf);
     else ESP_LOGE(TAG, "Failed to read bitmap: %s", spiffs_path);
 
-    free(buf);
+    heap_caps_free(buf);
 }

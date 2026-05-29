@@ -100,6 +100,9 @@ static void handle_backlight(encoder_event_t evt)
 {
     if (evt == ENCODER_EVT_BTN1_LONG) {
         spindle_emergency_stop();
+        stepper_stop();
+        if (g_axis_x) axis_stop(g_axis_x);
+        buzzer_signal_estop();
         ui_menu_notify("!!! E-STOP !!!", COLOR_RED, 3000);
         ui_menu_goto(SCREEN_MAIN);
         return;

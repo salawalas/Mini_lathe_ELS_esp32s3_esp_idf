@@ -63,6 +63,33 @@
 #define FONT_LG_W   16
 #define FONT_LG_H   32
 
+// ── Adaptacyjne rozmiary fontów – zależne od rozdzielczości ──
+#if DISP_H >= 400      // 480×320, 800×480 itp.
+  #define FONT_LABEL      FONT_MD
+  #define FONT_LABEL_W    FONT_MD_W
+  #define FONT_LABEL_H    FONT_MD_H
+  #define FONT_VALUE      FONT_LG
+  #define FONT_VALUE_W    FONT_LG_W
+  #define FONT_VALUE_H    FONT_LG_H
+  #define FONT_HEADER     FONT_LG
+#elif DISP_H >= 240     // 320×240
+  #define FONT_LABEL      FONT_SM
+  #define FONT_LABEL_W    FONT_SM_W
+  #define FONT_LABEL_H    FONT_SM_H
+  #define FONT_VALUE      FONT_MD
+  #define FONT_VALUE_W    FONT_MD_W
+  #define FONT_VALUE_H    FONT_MD_H
+  #define FONT_HEADER     FONT_LG
+#else                   // 160×128, 128×128
+  #define FONT_LABEL      FONT_SM
+  #define FONT_LABEL_W    FONT_SM_W
+  #define FONT_LABEL_H    FONT_SM_H
+  #define FONT_VALUE      FONT_SM
+  #define FONT_VALUE_W    FONT_SM_W
+  #define FONT_VALUE_H    FONT_SM_H
+  #define FONT_HEADER     FONT_MD
+#endif
+
 #define FONT_MN_SM  3   // Mincho 8×16px
 #define FONT_MN_MD  4   // Mincho 12×24px
 #define FONT_MN_LG  5   // Mincho 16×32px

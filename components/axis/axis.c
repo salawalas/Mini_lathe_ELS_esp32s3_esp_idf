@@ -243,6 +243,8 @@ void axis_run(axis_handle_t ax, axis_dir_t dir, float speed_mm_min)
     uint32_t s = (uint32_t)(speed_mm_min / 60.0f * ax->cfg->steps_per_mm);
     if (s < AXIS_SPEED_START)
         s = AXIS_SPEED_START;
+    if (s > ax->cfg->speed_max)
+        s = ax->cfg->speed_max;
     _start(ax, dir, s, 0, true);
 }
 

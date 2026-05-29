@@ -9,6 +9,7 @@ typedef enum {
     SCREEN_BACKLIGHT,   // Podsiwetlenie
     SCREEN_GCODE,       // G-code z karty SD
     SCREEN_POSITION,    // Pozycja / presety osi
+    SCREEN_DRO,         // DRO – duże cyfry Z/X
     SCREEN_COUNT
 } screen_id_t;
 

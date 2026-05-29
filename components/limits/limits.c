@@ -135,6 +135,20 @@ bool limits_can_move(axis_handle_t ax, axis_dir_t dir) {
             return false;
         }
     }
+
+    // ── Software limits: always active after homing (even without HW switches) ──
+    if (s_homed[aid]) {
+        float pos = axis_get_position_mm(ax);
+        float smin = (aid == AXIS_Z) ? SOFT_LIMIT_Z_MIN_MM : SOFT_LIMIT_X_MIN_MM;
+        float smax = (aid == AXIS_Z) ? SOFT_LIMIT_Z_MAX_MM : SOFT_LIMIT_X_MAX_MM;
+        if ((dir == AXIS_DIR_NEG && pos <= smin + 0.01f) ||
+            (dir == AXIS_DIR_POS && pos >= smax - 0.01f)) {
+            ESP_LOGW(TAG, "Os %s: soft-limit (%.2f mm, limit: %.0f..%.0f)",
+                     aid == AXIS_Z ? "Z" : "X", pos, smin, smax);
+            return false;
+        }
+    }
+
     return true;
 }
 

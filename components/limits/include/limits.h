@@ -28,6 +28,14 @@ typedef struct {
 	const char *name;
 } limit_status_t;
 
+// ── Software limits (fallback when HW limit switches are disconnected) ──
+// Active only after homing (s_homed[axis] == true).
+// Range: 0 mm = home position; negative travel allowed only for Z (carriage toward headstock).
+#define SOFT_LIMIT_Z_MIN_MM   (-250.0f)
+#define SOFT_LIMIT_Z_MAX_MM   (  10.0f)
+#define SOFT_LIMIT_X_MIN_MM   ( -80.0f)
+#define SOFT_LIMIT_X_MAX_MM   (  10.0f)
+
 // API
 void    limits_init(void);
 bool    limits_is_triggered(limit_id_t id);

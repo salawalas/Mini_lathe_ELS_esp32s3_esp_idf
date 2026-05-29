@@ -6,9 +6,9 @@ static struct {
     float    z_start_mm, z_end_mm;
     float    depth_mm;
     uint8_t  passes, param_sel;
-    bool     confirm_mode;
+    bool     confirm_mode, left_hand;
 } els_ui = { .preset_idx=5, .z_start_mm=0.0f, .z_end_mm=-20.0f,
-             .depth_mm=0.10f, .passes=1, .param_sel=0, .confirm_mode=false };
+             .depth_mm=0.10f, .passes=1, .param_sel=0, .confirm_mode=false, .left_hand=false };
 
 static void draw_els(void)
 {
@@ -16,11 +16,11 @@ static void draw_els(void)
     uint16_t hdr = els_is_running() ? rgb565(160,0,80) : rgb565(80,0,120);
     draw_header("ELS GWINTOWANIE", hdr);
     display_fill_rect(0, HEADER_H, SCR_W, CONTENT_H+2, COLOR_BLACK);
-    char buf[24]; int16_t y=CONTENT_Y+2;
+    char buf[32]; int16_t y=CONTENT_Y+2;
 
     if (els_is_running()) {
-        const char *ss[]={"IDLE","CZEKA","BIEG","POWRT","BLAD"};
-        uint16_t sc[]={COL_LABEL,COL_WARN,COL_OK,COL_VAL,COLOR_RED};
+        const char *ss[]={"IDLE","CZEKA","BIEG","POWRT","PAUZA","BLAD"};
+        uint16_t sc[]={COL_LABEL,COL_WARN,COL_OK,COL_VAL,COLOR_YELLOW,COLOR_RED};
         snprintf(buf,sizeof(buf),"Stan: %s", ss[st.state]);
         display_draw_string(4,y,buf,sc[st.state],COLOR_BLACK,1); y+=ROW_H;
         snprintf(buf,sizeof(buf),"Przejscie: %d/%d",st.pass_current,st.pass_total);
@@ -47,7 +47,26 @@ static void draw_els(void)
         }
         display_draw_string(4,y,buf,COLOR_LIGHT_GREY,COLOR_BLACK,1); y+=ROW_H;
         display_draw_hline(4,y,SCR_W-8,COLOR_LIGHT_GREY); y+=4;
-        display_draw_string(4,y,"BTN1=STOP ELS",COL_WARN,COLOR_BLACK,1);
+        // Pauza / wznów
+        if (st.state == ELS_STATE_PAUSED) {
+            display_draw_string(4,y,"BTN2=WZNOW  BTN1=STOP",COL_OK,COLOR_BLACK,1);
+        } else {
+            display_draw_string(4,y,"BTN2=PAUZA  BTN1=STOP",COL_WARN,COLOR_BLACK,1);
+        }
+        // Wskaźnik lewego gwintu
+        if (st.left_hand) {
+            display_draw_string(SCR_W-40, CONTENT_Y+2, "LEWY", rgb565(255,100,0), COLOR_BLACK, 1);
+        }
+        // ── Wskaźnik gwintowy (threading dial) ──
+        y += ROW_H;
+        {
+            int32_t sp = spindle_get_position();
+            int pct = (int)(((uint32_t)sp % SPINDLE_STEPS_PER_WREV) * 100L / SPINDLE_STEPS_PER_WREV);
+            display_fill_rect(UI_PAD_X, y, SCR_W - UI_PAD_X * 2, 6, rgb565(10, 10, 10));
+            display_fill_rect(UI_PAD_X, y, (SCR_W - UI_PAD_X * 2) * pct / 100, 6, COL_CYAN);
+            snprintf(buf, sizeof(buf), "Kat: %d%%", pct);
+            display_draw_string(UI_PAD_X, y + 6, buf, COL_LABEL, COLOR_BLACK, 1);
+        }
 
     } else if (els_ui.confirm_mode) {
         display_fill_rect(0,y,SCR_W,12,rgb565(80,0,0));
@@ -64,6 +83,8 @@ static void draw_els(void)
         display_draw_string(4,y,buf,COL_VAL,COLOR_BLACK,1); y+=ROW_H;
         snprintf(buf,sizeof(buf),"Przejsc: %d",els_ui.passes);
         display_draw_string(4,y,buf,COL_VAL,COLOR_BLACK,1); y+=ROW_H;
+        snprintf(buf,sizeof(buf),"Kierunek: %s",els_ui.left_hand?"LEWY":"PRAWY");
+        display_draw_string(4,y,buf,els_ui.left_hand?COLOR_ORANGE:COL_OK,COLOR_BLACK,1); y+=ROW_H;
         display_fill_rect(0,y,SCR_W,13, rgb565(0,60,0));
         display_draw_string(4,y+2,"SW=START  BTN2=ANULUJ",COLOR_WHITE, rgb565(0,60,0), 1);
 
@@ -81,6 +102,8 @@ static void draw_els(void)
         draw_row(y,"Przejscia:",buf,COL_VAL,els_ui.param_sel==3); y+=ROW_H;
         snprintf(buf,sizeof(buf),"%.2fmm",els_ui.depth_mm);
         draw_row(y,"X Glebokosc:",buf,COL_VAL,els_ui.param_sel==4); y+=ROW_H;
+        snprintf(buf,sizeof(buf),"%s",els_ui.left_hand?"LEWY":"PRAWY");
+        draw_row(y,"Kierunek:",buf,els_ui.left_hand?COLOR_ORANGE:COL_LABEL,els_ui.param_sel==5); y+=ROW_H;
         display_draw_hline(4,y,SCR_W-8,COLOR_LIGHT_GREY); y+=4;
         display_draw_string(4,y,"SW=param SW>>>=START",COLOR_LIGHT_GREY,COLOR_BLACK,1);
     }
@@ -97,7 +120,12 @@ static void handle_els(encoder_event_t evt)
         ui_menu_notify("!!! E-STOP !!!", COLOR_RED, 3000); return;
     }
     if (els_is_running()) {
+        els_status_t st; els_get_status(&st);
         if (evt==ENCODER_EVT_BTN1_PRESS) { els_stop(); buzzer_signal_warn(); ui_menu_notify("ELS STOP",COL_WARN,1000); }
+        else if (evt==ENCODER_EVT_BTN2_PRESS) {
+            if (st.state == ELS_STATE_PAUSED) { els_resume(); ui_menu_notify("ELS WZNOWIONE",COL_OK,800); }
+            else { els_pause(); ui_menu_notify("ELS PAUZA",COL_WARN,800); }
+        }
         return;
     }
     if (els_ui.confirm_mode) {
@@ -109,7 +137,8 @@ static void handle_els(encoder_event_t evt)
             els_config_t cfg={.pitch_mm=pitch,
                 .feed_dir=(els_ui.z_end_mm<els_ui.z_start_mm)?STEPPER_DIR_CCW:STEPPER_DIR_CW,
                 .z_start_mm=els_ui.z_start_mm,.z_end_mm=els_ui.z_end_mm,.passes=els_ui.passes,
-                .depth_per_pass=els_ui.depth_mm};
+                .depth_per_pass=els_ui.depth_mm,
+                .left_hand=els_ui.left_hand};
                 if (stepper_get_state() != STEPPER_STATE_IDLE) {
                 ui_menu_notify("Os Z jeszcze biegnie!", COL_WARN, 2000);
                 return;
@@ -129,6 +158,7 @@ static void handle_els(encoder_event_t evt)
                 case 2: els_ui.z_end_mm+=0.5f; break;
                 case 3: if(els_ui.passes<20) els_ui.passes++; break;
                 case 4: if(els_ui.depth_mm<1.0f) els_ui.depth_mm+=0.02f; break;
+                case 5: els_ui.left_hand=!els_ui.left_hand; break;
             } break;
         case ENCODER_EVT_CCW:
             switch(els_ui.param_sel){
@@ -137,9 +167,10 @@ static void handle_els(encoder_event_t evt)
                 case 2: els_ui.z_end_mm-=0.5f; break;
                 case 3: if(els_ui.passes>1) els_ui.passes--; break;
                 case 4: if(els_ui.depth_mm>0.02f) els_ui.depth_mm-=0.02f; break;
+                case 5: els_ui.left_hand=!els_ui.left_hand; break;
             } break;
         case ENCODER_EVT_SW_PRESS:
-            els_ui.param_sel=(els_ui.param_sel+1)%5; break;
+            els_ui.param_sel=(els_ui.param_sel+1)%6; break;
         case ENCODER_EVT_SW_LONG:
             if (!spindle_is_at_speed()) ui_menu_notify("Uruchom wrzeciono!",COL_WARN,2000);
             else {

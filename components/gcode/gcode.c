@@ -279,11 +279,11 @@ static bool exec_one_line(const char *line_raw, uint32_t len)
             ESP_LOGW(TAG, "Nieobslugiwany G%d – pomijam", gcode);
             break;
         }
-        return true;
+        // Fall through to check S-word on same line
     }
 
     // ── M-codes ──
-    if (*p == 'M' || *p == 'm') {
+    else if (*p == 'M' || *p == 'm') {
         p++;
         int mcode = (int)strtol(p, (char **)&p, 10);
 
@@ -323,7 +323,7 @@ static bool exec_one_line(const char *line_raw, uint32_t len)
             ESP_LOGW(TAG, "Nieobslugiwany M%d – pomijam", mcode);
             break;
         }
-        return true;
+        // Fall through to check S-word on same line
     }
 
     // ── S-word (prędkość wrzeciona) ──

@@ -38,11 +38,12 @@ const uint8_t ELS_THREAD_PRESETS_COUNT = sizeof(ELS_THREAD_PRESETS)/sizeof(ELS_T
 static struct {
     els_state_t     state;
     els_config_t    cfg;
-    float           feed_steps_per_rev;
-    volatile float  accumulator;
+    int32_t         feed_steps_per_rev;   // fixed-point: steps/rev × 256
+    volatile int32_t accumulator;         // fixed-point: fractional steps × 256
     volatile int32_t steps_sent;
     uint8_t         pass_current;
-    volatile bool   active, rev_pending, stop_request;
+    volatile bool   active, rev_pending, stop_request, pause_request;
+    float           retract_x_mm;      // pozycja X przed retrakcją
     SemaphoreHandle_t mutex;
     TaskHandle_t    task_handle;
 } e = {0};
@@ -57,7 +58,7 @@ float els_feed_steps_per_spindle_rev_runtime(float pitch_mm) { return pitch_mm *
 // NIE wolno tu wołać stepper_jog / axis_jog / xSemaphoreTake
 static void IRAM_ATTR spindle_rev_cb(void *arg)
 {
-    if (!e.active || e.stop_request) return;
+    if (!e.active || e.stop_request || e.pause_request) return;
 
     e.accumulator += e.feed_steps_per_rev;
     e.rev_pending = true;
@@ -78,7 +79,7 @@ static void els_task_fn(void *arg)
         if (e.stop_request) break;
         e.pass_current = pass;
         e.steps_sent   = 0;
-        e.accumulator  = 0.0f;
+        e.accumulator  = 0;
         e.rev_pending  = false;
 
         // ── Dosuw X (głębokość skrawania) ──
@@ -120,23 +121,51 @@ static void els_task_fn(void *arg)
         }
 
         e.state        = ELS_STATE_RUNNING;
-        e.active       = true;
+        e.accumulator  = 0;
         e.rev_pending  = false;
-        e.accumulator  = 0.0f;
+        e.active       = true;
 
         // ── Główna pętla: odbieraj powiadomienia z ISR i konsumuj kroki ──
+        // Lewe gwinty: odwróć kierunek posuwu
+        stepper_dir_t eff_dir = e.cfg.left_hand
+            ? ((e.cfg.feed_dir == STEPPER_DIR_CW) ? STEPPER_DIR_CCW : STEPPER_DIR_CW)
+            : e.cfg.feed_dir;
+
         for (;;) {
+            // ── Pauza z retrakcją narzędzia ──
+            if (e.pause_request && e.state == ELS_STATE_RUNNING) {
+                e.state = ELS_STATE_PAUSED;
+                e.active = false;
+                stepper_stop();
+                if (g_axis_x) {
+                    e.retract_x_mm = axis_get_position_mm(g_axis_x);
+                    axis_move_to_mm(g_axis_x, e.retract_x_mm + 0.5f, 30.0f);
+                }
+                while (e.pause_request && !e.stop_request) {
+                    vTaskDelay(pdMS_TO_TICKS(100));
+                }
+                if (e.stop_request) break;
+                // Powrót X i wznowienie
+                if (g_axis_x) {
+                    axis_move_to_mm(g_axis_x, e.retract_x_mm, 30.0f);
+                }
+                e.state = ELS_STATE_RUNNING;
+                e.active = true;
+                e.rev_pending = false;
+                continue;
+            }
+
             uint32_t n = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(500));
             if (!n && !e.rev_pending) break;  // timeout = koniec przejścia
 
-            while (e.accumulator >= 1.0f && !e.stop_request) {
-                int32_t steps = (int32_t)e.accumulator;
+            while (e.accumulator >= 256 && !e.stop_request && !e.pause_request) {
+                int32_t steps = e.accumulator / 256;
                 if (steps > 160) steps = 160;  // batch limit – nie blokuj
-                e.accumulator -= (float)steps;
+                e.accumulator -= steps * 256;
                 if (steps <= 0) break;
 
                 float cur_z = stepper_get_position_mm();
-                float rem = (e.cfg.feed_dir == STEPPER_DIR_CW)
+                float rem = (eff_dir == STEPPER_DIR_CW)
                             ? e.cfg.z_end_mm - cur_z
                             : cur_z - e.cfg.z_end_mm;
                 if (rem <= 0.0f) {
@@ -149,7 +178,7 @@ static void els_task_fn(void *arg)
                     if (steps <= 0) { e.active = false; e.stop_request = true; stepper_stop(); break; }
                 }
 
-                stepper_jog(e.cfg.feed_dir, (uint16_t)steps, 90);
+                stepper_jog(eff_dir, (uint16_t)steps, 90);
                 e.steps_sent += steps;
             }
             if (!e.active || e.stop_request) break;
@@ -183,8 +212,9 @@ bool els_start(const els_config_t *cfg)
     if (e.state != ELS_STATE_IDLE) return false;
     if (cfg->pitch_mm <= 0.0f || fabsf(cfg->z_end_mm - cfg->z_start_mm) < 0.1f) return false;
     memcpy(&e.cfg, cfg, sizeof(els_config_t));
-    e.feed_steps_per_rev = els_feed_steps_per_spindle_rev_runtime(cfg->pitch_mm);
-    e.accumulator  = 0.0f;
+    float raw = els_feed_steps_per_spindle_rev_runtime(cfg->pitch_mm);
+    e.feed_steps_per_rev = (int32_t)(raw * 256.0f);
+    e.accumulator  = 0;
     e.stop_request = false;
     e.active       = false;
     e.rev_pending  = false;
@@ -211,11 +241,27 @@ void els_get_status(els_status_t *st)
     st->spindle_rpm  = spindle_get_rpm();
     st->steps_sent   = e.steps_sent;
     st->sync_ok      = e.active && (e.state == ELS_STATE_RUNNING) && spindle_is_at_speed();
+    st->left_hand    = e.cfg.left_hand;
 }
 
 bool els_is_running(void)
 {
     return e.state == ELS_STATE_RUNNING
         || e.state == ELS_STATE_WAITING
-        || e.state == ELS_STATE_RETRACTING;
+        || e.state == ELS_STATE_RETRACTING
+        || e.state == ELS_STATE_PAUSED;
+}
+
+void els_pause(void)
+{
+    if (e.state == ELS_STATE_RUNNING) {
+        e.pause_request = true;
+    }
+}
+
+void els_resume(void)
+{
+    if (e.state == ELS_STATE_PAUSED) {
+        e.pause_request = false;
+    }
 }

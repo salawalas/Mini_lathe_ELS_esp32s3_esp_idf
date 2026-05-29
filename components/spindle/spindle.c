@@ -188,7 +188,13 @@ void spindle_get_status(spindle_status_t *st)
     xSemaphoreGive(s.mutex);
 }
 
-uint16_t spindle_get_rpm(void)    { return SPINDLE_SPS_TO_RPM(s.speed_current); }
+uint16_t spindle_get_rpm(void)
+{
+    xSemaphoreTake(s.mutex, portMAX_DELAY);
+    uint16_t rpm = SPINDLE_SPS_TO_RPM(s.speed_current);
+    xSemaphoreGive(s.mutex);
+    return rpm;
+}
 bool spindle_is_at_speed(void)
 {
     xSemaphoreTake(s.mutex, portMAX_DELAY);

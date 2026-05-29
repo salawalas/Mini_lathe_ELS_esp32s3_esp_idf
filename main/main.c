@@ -23,6 +23,7 @@
 #include "homing_state.h"
 #include "gcode.h"
 #include "buzzer.h"
+#include "esp_task_wdt.h"
 #include <stdio.h>
 
 static const char *TAG = "MAIN";
@@ -174,7 +175,8 @@ static void show_homing_warning(void)
 
         // Duży napis – wyśrodkowany
         int mid_y = DISP_H / 2;
-        display_string(DISP_W / 2 - 72, mid_y - 36,
+        int uw = display_text_width("! UWAGA !", FONT_LG);
+        display_string((DISP_W - uw) / 2, mid_y - 36,
                        "! UWAGA !", FONT_LG, fg, 0xFFFF);
         display_string(8, mid_y,
                        "Brak bazowania osi!", FONT_MD, fg, 0xFFFF);
@@ -269,12 +271,22 @@ void app_main(void)
     gcode_init();
     ESP_LOGI(TAG, "Parser G-code gotowy.");
 
+    // ── Task Watchdog ──────────────────────────────────────
+    // TWDT już zainicjalizowany przez ESP-IDF (CONFIG_ESP_TASK_WDT_EN=y).
+    // Subskrybujemy tylko główny task — timeout domyślnie 5s, panic.
+    esp_task_wdt_add(NULL);
+    ESP_LOGI(TAG, "TWDT: main task subscribed");
+
     ESP_LOGI(TAG, "=== Wszystkie moduly aktywne (g_homed=%d) ===",
              (int)g_homed);
 
     while (1)
     {
-        vTaskDelay(pdMS_TO_TICKS(10000));
+        // Resetuj watchdoga co 2.5s (timeout=5s), loguj co 10s
+        for (int i = 0; i < 4; i++) {
+            esp_task_wdt_reset();
+            vTaskDelay(pdMS_TO_TICKS(2500));
+        }
         ESP_LOGD(TAG, "Heap: %lu B  homed: %d",
                  (unsigned long)esp_get_free_heap_size(), (int)g_homed);
     }

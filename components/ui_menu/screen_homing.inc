@@ -72,7 +72,8 @@ static void draw_homing(void)
         // ── Ekran ostrzeżenia przed startem ──────────────────
         const int MID_Y = SCR_H / 2;
 
-        display_string(SCR_W / 2 - 72, MID_Y - 40,
+        int uw = display_text_width("! UWAGA !", FONT_LG);
+        display_string((SCR_W - uw) / 2, MID_Y - 40,
                        "! UWAGA !",
                        FONT_LG, COL_WHITE, 0xFFFF);
 

@@ -78,6 +78,10 @@ static const char *TAG = "UI";
 #define COL_HDR_BACKLIGHT rgb565(80,40,0)
 #define COL_HDR_POSITION rgb565(0,60,100)
 
+// ── Wygaszacz ekranu ──────────────────────────────────────
+#define SCREENSAVER_TIMEOUT_MS  60000   // 60 sekund bezczynności
+#define SCREENSAVER_DIM_PCT     15      // jasność przy wygaszaczu
+
 // ------------------------------------------------------------
 //  Stan globalny UI
 // ------------------------------------------------------------
@@ -96,6 +100,9 @@ static struct
     uint8_t settings_sel, menu_sel;
     uint8_t menu_win;
     uint8_t menu_top;
+    int32_t last_activity_ms;
+    uint8_t saved_brightness;
+    bool    screensaver_active;
 } ui = {
     .current = SCREEN_MAIN,
     .previous = SCREEN_MAIN,
@@ -111,7 +118,11 @@ static struct
     .spindle_dir = SPINDLE_DIR_FWD,
     .settings_sel = 0,
     .menu_sel = 0,
+    .menu_win = 0,
     .menu_top = 0,
+    .last_activity_ms = 0,
+    .saved_brightness = 90,
+    .screensaver_active = false,
 };
 
 static const uint16_t JOG_STEPS[] = {1, 8, 16, 80, 160};
@@ -131,6 +142,7 @@ static const char *MENU_NAMES[] = {
     "Podswietlenie",
     "G-code (SD)",
     "Pozycja / Presety",
+    "DRO (duze cyfry)",
     // SCREEN_MENU (ostatni) nie pojawia sie na liscie – sluzy jako sentinel
 };
 
@@ -139,7 +151,7 @@ static const screen_id_t MENU_ORDER[] = {
     SCREEN_MAIN, SCREEN_JOG, SCREEN_FEED, SCREEN_SPINDLE,
     SCREEN_SETTINGS, SCREEN_ELS, SCREEN_AXIS_X,
     SCREEN_HOMING, SCREEN_BACKLIGHT, SCREEN_GCODE,
-    SCREEN_POSITION, SCREEN_MENU};
+    SCREEN_POSITION, SCREEN_DRO, SCREEN_MENU};
 
 // Sprawdź czy MENU_NAMES zgadza się z MENU_ORDER (minus sentinel SCREEN_MENU)
 _Static_assert(
@@ -183,6 +195,7 @@ static void draw_footer(void)
         "ENC=jasn SW=zapisz",        // SCREEN_BACKLIGHT
         "ENC=plik BTN3=start",       // SCREEN_GCODE
         "ENC=val BTN3=ustaw",        // SCREEN_POSITION
+        "ENC=jasn SW=menu BTN3=0",   // SCREEN_DRO
     };
     if (ui.uptime_ms < ui.notify_until_ms && ui.notify_msg[0])
     {
@@ -203,6 +216,21 @@ static void draw_row(int16_t y, const char *label, const char *val,
     display_fill_rect(0, y + UI_ROW_GAP, SCR_W, ROW_H - (2 * UI_ROW_GAP), bg);
     display_draw_string(UI_PAD_X, y + UI_TEXT_Y, label, COL_LABEL, bg, 1);
     display_draw_string(UI_VALUE_X, y + UI_TEXT_Y, val, vc, bg, 1);
+}
+
+// ------------------------------------------------------------
+//  Scentralizowany E-STOP – wywoływany na początku każdego handlera
+// ------------------------------------------------------------
+static bool ui_estop_handler(encoder_event_t evt)
+{
+    if (evt != ENCODER_EVT_BTN1_LONG) return false;
+    spindle_emergency_stop();
+    stepper_stop();
+    if (g_axis_x) axis_stop(g_axis_x);
+    buzzer_signal_estop();
+    ui_menu_notify("!!! E-STOP !!!", COLOR_RED, 3000);
+    ui_menu_goto(SCREEN_MAIN);
+    return true;
 }
 
 // ------------------------------------------------------------
@@ -400,6 +428,7 @@ static void draw_menu(void)
 static void backlight_screen_enter(void); // forward decl
 static void handle_menu(encoder_event_t evt)
 {
+    if (ui_estop_handler(evt)) return;
     switch (evt) {
     case ENCODER_EVT_CW:
         ui.menu_sel = (ui.menu_sel + 1) % menu_count;
@@ -768,6 +797,7 @@ static void draw_settings(void)
 
 static void handle_settings(encoder_event_t evt)
 {
+    if (ui_estop_handler(evt)) return;
     switch (evt)
     {
     case ENCODER_EVT_CW:
@@ -827,6 +857,8 @@ static void handle_settings(encoder_event_t evt)
 
 #include "screen_position.inc"
 
+#include "screen_dro.inc"
+
 // ------------------------------------------------------------
 //  Tablica ekranów
 // ------------------------------------------------------------
@@ -836,11 +868,11 @@ typedef void (*handle_fn_t)(encoder_event_t);
 static const draw_fn_t s_draw[] = {
     draw_main, draw_menu, draw_jog, draw_feed, draw_spindle,
     draw_settings, draw_els, draw_axis_x, draw_homing, draw_backlight,
-    draw_gcode, draw_position};
+    draw_gcode, draw_position, draw_dro};
 static const handle_fn_t s_handle[] = {
     handle_main, handle_menu, handle_jog, handle_feed, handle_spindle,
     handle_settings, handle_els, handle_axis_x, handle_homing, handle_backlight,
-    handle_gcode, handle_position};
+    handle_gcode, handle_position, handle_dro};
 
 // ------------------------------------------------------------
 //  E-STOP callback z ISR spindle
@@ -871,7 +903,23 @@ static void ui_task(void *arg)
 
         if (got)
         {
+            // Aktywność wybudza wygaszacz
+            if (ui.screensaver_active) {
+                display_brightness(ui.saved_brightness);
+                ui.screensaver_active = false;
+            }
+            ui.last_activity_ms = ui.uptime_ms;
             s_handle[ui.current](msg.type);
+            ui.needs_redraw = true;
+        }
+
+        // ── Wygaszacz ekranu ──
+        if (!ui.screensaver_active && !spindle_estop_is_active() &&
+            (ui.uptime_ms - ui.last_activity_ms) > SCREENSAVER_TIMEOUT_MS)
+        {
+            ui.saved_brightness = 90;   // domyślna; nadpisana przez NVS przy init
+            display_brightness(SCREENSAVER_DIM_PCT);
+            ui.screensaver_active = true;
             ui.needs_redraw = true;
         }
 
