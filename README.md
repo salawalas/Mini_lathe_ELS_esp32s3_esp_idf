@@ -365,9 +365,6 @@ Ustawienia przechowywane w NVS (trwale przez resek):
 ```bash
 # Konfiguracja (model TFT, piny, rozdzielczosc)
 idf.py menuconfig
-# Wymagane opcje:
-#   Component config → Wi-Fi → [*] Wi-Fi
-#   Component config → Bluetooth → [*] Bluetooth → Bluedroid → [*] GATT server
 
 # Budowanie (kompiluje + tworzy obraz SPIFFS)
 idf.py build
@@ -379,7 +376,7 @@ idf.py -p COMxx flash
 idf.py -p COMxx monitor
 ```
 
-`sdkconfig.defaults` zawiera prekonfiguracje dla ESP32-S3: QIO 80MHz, 16MB flash, 8MB PSRAM, task WDT 10s, SPIFFS, **WiFi AP**, **BLE GATT**.
+`sdkconfig.defaults` zawiera prekonfiguracje dla ESP32-S3: QIO 80MHz, 16MB flash, 8MB PSRAM, USB JTAG console, task WDT 10s, SPIFFS partition table.
 
 ---
 

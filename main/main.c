@@ -1,9 +1,9 @@
 // ============================================================
-//  main.c  –  Mini Lathe Controller v6.1
+//  main.c  –  Mini Lathe Controller v6.2.0
 //  ST7796 480×320  /  IDF 5.5  /  ESP32-S3
 // ============================================================
 
-#define LATHE_VERSION "6.1"
+#define LATHE_VERSION "6.2.0"
 #define LATHE_NAME "Mini Lathe v" LATHE_VERSION
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
