@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>MiniLathe Control</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@500;700&display=swap');
+
+  :root {
+    --bg:       #0e0f11;
+    --panel:    #16181c;
+    --border:   #2a2d35;
+    --amber:    #ffb300;
+    --amber-dim:#7a5500;
+    --cyan:     #00e5ff;
+    --red:      #ff1744;
+    --green:    #00e676;
+    --blue:     #2979ff;
+    --muted:    #4a5060;
+    --text:     #c8ccd8;
+    --mono:     'Share Tech Mono', monospace;
+    --ui:       'Rajdhani', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--ui);
+    min-height: 100dvh;
+    padding: 12px;
+    overflow-x: hidden;
+  }
+
+  /* ── HEADER ── */
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  .logo {
+    font-family: var(--mono);
+    font-size: 18px;
+    color: var(--amber);
+    letter-spacing: 3px;
+    text-transform: uppercase;
+  }
+  .logo span { color: var(--muted); font-size: 11px; display: block; letter-spacing: 2px; margin-top: -2px; }
+
+  #pill {
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 5px 12px;
+    border-radius: 99px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--muted);
+    letter-spacing: 1px;
+    transition: all .3s;
+  }
+  #pill.on  { border-color: var(--green); color: var(--green); background: #00261a; }
+  #pill.off { border-color: var(--red);   color: var(--red);   background: #260010; }
+
+  /* ── CONNECT BUTTON ── */
+  #btnConnect {
+    width: 100%;
+    padding: 15px;
+    margin-bottom: 12px;
+    background: #1a1f28;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--cyan);
+    font-family: var(--ui);
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    cursor: pointer;
+    transition: background .2s, border-color .2s;
+  }
+  #btnConnect:hover { background: #1e2530; border-color: var(--cyan); }
+  #btnConnect.active { border-color: var(--red); color: var(--red); }
+
+  /* ── DRO DISPLAY ── */
+  .dro-panel {
+    background: #090a0c;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-bottom: 12px;
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 8px;
+  }
+  .dro-cell { text-align: center; }
+  .dro-lbl {
+    font-family: var(--ui);
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-bottom: 2px;
+  }
+  .dro-val {
+    font-family: var(--mono);
+    font-size: 17px;
+    color: var(--amber);
+    white-space: nowrap;
+  }
+  .dro-val.ok   { color: var(--green); }
+  .dro-val.warn { color: var(--red); }
+
+  /* ── SECTION ── */
+  .section { margin-bottom: 12px; }
+  .sec-title {
+    font-size: 10px;
+    letter-spacing: 3px;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-bottom: 7px;
+    padding-left: 2px;
+  }
+
+  /* ── BUTTONS ── */
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+  .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 7px; }
+
+  .btn {
+    padding: 14px 6px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--panel);
+    color: var(--text);
+    font-family: var(--ui);
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    cursor: pointer;
+    transition: background .15s, border-color .15s, transform .1s;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .btn:active { transform: scale(0.94); }
+  .btn:disabled { opacity: 0.25; cursor: not-allowed; transform: none; }
+
+  .btn-z { border-color: #1a3a5e; color: var(--cyan); }
+  .btn-z:hover:not(:disabled) { background: #101e2e; border-color: var(--cyan); }
+
+  .btn-x { border-color: #1a3a20; color: #69ff8a; }
+  .btn-x:hover:not(:disabled) { background: #0d1e10; border-color: #69ff8a; }
+
+  .btn-sp { border-color: #3a2a00; color: var(--amber); }
+  .btn-sp:hover:not(:disabled) { background: #1e1500; border-color: var(--amber); }
+
+  .btn-stop {
+    width: 100%;
+    margin-top: 7px;
+    padding: 12px;
+    border-color: #3a3a3a;
+    color: var(--muted);
+  }
+  .btn-stop:hover:not(:disabled) { background: #222; border-color: var(--text); color: var(--text); }
+
+  /* ESTOP */
+  #btnEstop {
+    width: 100%;
+    padding: 20px;
+    margin-top: 4px;
+    background: #1a0008;
+    border: 2px solid var(--red);
+    border-radius: 8px;
+    color: var(--red);
+    font-family: var(--ui);
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: 3px;
+    cursor: pointer;
+    transition: background .15s, transform .1s;
+    text-transform: uppercase;
+  }
+  #btnEstop:active { transform: scale(0.97); background: #2a0010; }
+  #btnEstop:disabled { opacity: 0.2; cursor: not-allowed; transform: none; }
+
+  /* ── LOG ── */
+  #log {
+    background: #090a0c;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    height: 70px;
+    overflow-y: auto;
+    margin-top: 12px;
+    line-height: 1.6;
+  }
+  #log .ok  { color: var(--green); }
+  #log .err { color: var(--red); }
+  #log .tx  { color: var(--cyan); }
+
+  /* ── CUSTOM RPM INPUT ── */
+  .rpm-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr auto;
+    gap: 7px;
+    margin-top: 7px;
+    align-items: stretch;
+  }
+  .num-input {
+    background: #090a0c;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--amber);
+    font-family: var(--mono);
+    font-size: 15px;
+    padding: 10px 10px;
+    text-align: center;
+    outline: none;
+    width: 100%;
+    -moz-appearance: textfield;
+  }
+  .num-input::-webkit-inner-spin-button,
+  .num-input::-webkit-outer-spin-button { -webkit-appearance: none; }
+  .num-input:focus { border-color: var(--amber-dim); }
+  .num-input::placeholder { color: var(--muted); }
+
+  /* ── MACROS ── */
+  .macro-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 7px;
+    margin-bottom: 7px;
+  }
+  .macro-btn {
+    background: #131720;
+    border: 1px solid #2a3050;
+    border-radius: 6px;
+    color: #8899cc;
+    font-family: var(--ui);
+    font-size: 13px;
+    font-weight: 700;
+    padding: 12px 8px;
+    cursor: pointer;
+    transition: background .15s, border-color .15s, transform .1s;
+    text-align: left;
+    letter-spacing: .5px;
+    position: relative;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .macro-btn:active { transform: scale(0.94); }
+  .macro-btn:disabled { opacity: 0.25; cursor: not-allowed; transform: none; }
+  .macro-btn:hover:not(:disabled) { background: #1a2035; border-color: #5566aa; }
+  .macro-btn .mc-name { display: block; color: #aabbee; }
+  .macro-btn .mc-json {
+    display: block;
+    font-family: var(--mono);
+    font-size: 9px;
+    color: var(--muted);
+    margin-top: 3px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
+  }
+  .macro-del {
+    position: absolute;
+    top: 5px; right: 7px;
+    font-size: 14px;
+    color: var(--muted);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 2px 4px;
+    line-height: 1;
+  }
+  .macro-del:hover { color: var(--red); }
+
+  .macro-form {
+    background: #090a0c;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px;
+    margin-top: 8px;
+  }
+  .macro-form input[type=text] {
+    display: block;
+    width: 100%;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 8px 10px;
+    outline: none;
+    margin-bottom: 6px;
+  }
+  .macro-form input[type=text]:focus { border-color: #5566aa; }
+  .macro-form input[type=text]::placeholder { color: var(--muted); }
+  .btn-add-macro {
+    width: 100%;
+    padding: 10px;
+    background: #0d1525;
+    border: 1px solid #2a3050;
+    border-radius: 5px;
+    color: #8899cc;
+    font-family: var(--ui);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    cursor: pointer;
+  }
+  .btn-add-macro:hover { background: #1a2035; border-color: #5566aa; }
+
+  .empty-macros {
+    text-align: center;
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 16px;
+    border: 1px dashed var(--border);
+    border-radius: 6px;
+    margin-bottom: 7px;
+  }
+
+  /* ── COLLAPSIBLE FORM ── */
+  .toggle-form {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    color: var(--muted);
+    font-family: var(--ui);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    padding: 7px 12px;
+    cursor: pointer;
+    width: 100%;
+    transition: color .2s, border-color .2s;
+    margin-bottom: 7px;
+  }
+  .toggle-form:hover { color: var(--text); border-color: #444; }
+
+  /* scrollbar */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">MiniLathe<span>PANEL STEROWANIA</span></div>
+  <div id="pill">● OFFLINE</div>
+</header>
+
+<button id="btnConnect" onclick="toggleConnect()">⬡ POŁĄCZ BLUETOOTH</button>
+
+<!-- DRO -->
+<div class="dro-panel">
+  <div class="dro-cell">
+    <div class="dro-lbl">Oś Z</div>
+    <div class="dro-val" id="dZ">—</div>
+  </div>
+  <div class="dro-cell">
+    <div class="dro-lbl">Oś X</div>
+    <div class="dro-val" id="dX">—</div>
+  </div>
+  <div class="dro-cell">
+    <div class="dro-lbl">RPM</div>
+    <div class="dro-val" id="dRPM">—</div>
+  </div>
+  <div class="dro-cell">
+    <div class="dro-lbl">Wrzeciono</div>
+    <div class="dro-val" id="dSP">—</div>
+  </div>
+  <div class="dro-cell">
+    <div class="dro-lbl">Homed</div>
+    <div class="dro-val" id="dHOMED">—</div>
+  </div>
+  <div class="dro-cell">
+    <div class="dro-lbl">EStop</div>
+    <div class="dro-val" id="dES">—</div>
+  </div>
+</div>
+
+<!-- JOG Z -->
+<div class="section">
+  <div class="sec-title">Jog — Oś Z</div>
+  <div class="grid3">
+    <button class="btn btn-z" disabled onclick="jog('Z',-100)">◀◀ -100</button>
+    <button class="btn btn-z" disabled onclick="jog('Z',-10)"> ◀ -10</button>
+    <button class="btn btn-z" disabled onclick="jog('Z',-1)">  ◀ -1</button>
+    <button class="btn btn-z" disabled onclick="jog('Z', 1)">  +1 ▶</button>
+    <button class="btn btn-z" disabled onclick="jog('Z', 10)"> +10 ▶</button>
+    <button class="btn btn-z" disabled onclick="jog('Z', 100)">+100 ▶▶</button>
+  </div>
+</div>
+
+<!-- JOG X -->
+<div class="section">
+  <div class="sec-title">Jog — Oś X</div>
+  <div class="grid2">
+    <button class="btn btn-x" disabled onclick="jog('X',-10)">◀ -10</button>
+    <button class="btn btn-x" disabled onclick="jog('X', 10)">+10 ▶</button>
+    <button class="btn btn-x" disabled onclick="jog('X',-1)"> ◀ -1</button>
+    <button class="btn btn-x" disabled onclick="jog('X',  1)">+1 ▶</button>
+  </div>
+</div>
+
+<!-- WRZECIONO -->
+<div class="section">
+  <div class="sec-title">Wrzeciono — RPM</div>
+  <div class="grid3">
+    <button class="btn btn-sp" disabled onclick="spindle(30,'fwd')"> ▶ 30</button>
+    <button class="btn btn-sp" disabled onclick="spindle(60,'fwd')"> ▶ 60</button>
+    <button class="btn btn-sp" disabled onclick="spindle(100,'fwd')">▶ 100</button>
+    <button class="btn btn-sp" disabled onclick="spindle(30,'rev')"> ◀ 30</button>
+    <button class="btn btn-sp" disabled onclick="spindle(60,'rev')"> ◀ 60</button>
+    <button class="btn btn-sp" disabled onclick="spindle(100,'rev')">◀ 100</button>
+  </div>
+  <button class="btn btn-stop" disabled onclick="send({cmd:'spindle',rpm:0})">■ STOP WRZECIONO</button>
+
+  <!-- Custom RPM -->
+  <div class="rpm-row">
+    <input class="num-input" id="customRpm" type="number" min="1" max="3000" placeholder="RPM" value="80">
+    <select class="num-input" id="customDir" style="color:var(--amber);font-family:var(--mono);font-size:13px;">
+      <option value="fwd">▶ FWD</option>
+      <option value="rev">◀ REV</option>
+    </select>
+    <button class="btn btn-sp" style="padding:10px 14px;" disabled onclick="spindleCustom()">START</button>
+  </div>
+</div>
+
+<!-- MACROS -->
+<div class="section">
+  <div class="sec-title">Makra użytkownika</div>
+  <div class="macro-grid" id="macroGrid"></div>
+  <button class="toggle-form" onclick="toggleForm()">＋ DODAJ MAKRO</button>
+  <div class="macro-form" id="macroForm" style="display:none;">
+    <input type="text" id="macroName" placeholder="Nazwa (np. Gwint M8)" maxlength="30">
+    <input type="text" id="macroJSON" placeholder='{"cmd":"jog","axis":"Z","steps":50}' maxlength="200">
+    <button class="btn-add-macro" onclick="addMacro()">✓ ZAPISZ MAKRO</button>
+  </div>
+</div>
+
+<!-- ESTOP -->
+<button id="btnEstop" disabled onclick="estop()">⚠ E-STOP ⚠</button>
+
+<!-- LOG -->
+<div id="log"><span class="ok">// gotowy — kliknij POŁĄCZ</span></div>
+
+<script>
+  const SVC     = '000000ff-0000-1000-8000-00805f9b34fb'; // 0x00FF (uważaj: nie 0xFF00!)
+  const CHR_DRO = '0000ff01-0000-1000-8000-00805f9b34fb';
+  const CHR_CMD = '0000ff02-0000-1000-8000-00805f9b34fb';
+
+  let cmdChar  = null;
+  let gattDev  = null;
+  let isConnected = false;
+
+  // ── LOG ──────────────────────────────────────────────────
+  function log(msg, cls='') {
+    const el = document.getElementById('log');
+    const line = document.createElement('div');
+    if (cls) line.className = cls;
+    line.textContent = msg;
+    el.appendChild(line);
+    if (el.children.length > 40) el.removeChild(el.firstChild);
+    el.scrollTop = el.scrollHeight;
+  }
+
+  // ── STATE ────────────────────────────────────────────────
+  function setConnected(c) {
+    isConnected = c;
+    const pill = document.getElementById('pill');
+    const btn  = document.getElementById('btnConnect');
+    pill.textContent = c ? '● ONLINE' : '● OFFLINE';
+    pill.className   = c ? 'on' : 'off';
+    btn.textContent  = c ? '✕ ROZŁĄCZ' : '⬡ POŁĄCZ BLUETOOTH';
+    btn.className    = c ? 'active' : '';
+    document.querySelectorAll('.btn, #btnEstop').forEach(b => b.disabled = !c);
+  }
+
+  // ── CONNECT ──────────────────────────────────────────────
+  async function toggleConnect() {
+    if (isConnected && gattDev) {
+      gattDev.gatt.disconnect();
+      return;
+    }
+    if (!navigator.bluetooth) {
+      alert('Wymagany Chrome na Androidzie (Web Bluetooth).\nFirefox i Safari nie obsługują tego API.');
+      return;
+    }
+    try {
+      log('// szukam MiniLathe…');
+      const device = await navigator.bluetooth.requestDevice({
+        filters: [{ name: 'MiniLathe' }],
+        optionalServices: [SVC]
+      });
+      gattDev = device;
+      device.addEventListener('gattserverdisconnected', onDisconnect);
+
+      log('// łączę…');
+      const server  = await device.gatt.connect();
+      const service = await server.getPrimaryService(SVC);
+
+      cmdChar = await service.getCharacteristic(CHR_CMD);
+
+      const dro = await service.getCharacteristic(CHR_DRO);
+      await dro.startNotifications();
+      dro.addEventListener('characteristicvaluechanged', onDRO);
+
+      setConnected(true);
+      log('// połączono ✓', 'ok');
+    } catch(e) {
+      log('// błąd: ' + e.message, 'err');
+    }
+  }
+
+  function onDisconnect() {
+    setConnected(false);
+    cmdChar = null;
+    log('// rozłączono', 'err');
+    ['dZ','dX','dRPM','dSP','dHOMED','dES'].forEach(id => {
+      const el = document.getElementById(id);
+      el.textContent = '—';
+      el.className = 'dro-val';
+    });
+  }
+
+  // ── DRO UPDATE ───────────────────────────────────────────
+  function onDRO(e) {
+    try {
+      const d = JSON.parse(new TextDecoder().decode(e.target.value));
+      set('dZ',     d.z?.toFixed(2) + ' mm');
+      set('dX',     d.x?.toFixed(2) + ' mm');
+      set('dRPM',   d.rpm + ' rpm');
+      set('dSP',    d.spindle ? 'ON' : 'OFF', d.spindle ? 'ok' : '');
+      set('dHOMED', d.homed  ? 'TAK' : 'NIE', d.homed ? 'ok' : '');
+      set('dES',    d.estop  ? 'AKTYWNY' : 'OK', d.estop ? 'warn' : 'ok');
+    } catch(_) {}
+  }
+  function set(id, val, cls='') {
+    const el = document.getElementById(id);
+    el.textContent = val;
+    el.className = 'dro-val' + (cls ? ' ' + cls : '');
+  }
+
+  // ── SEND ─────────────────────────────────────────────────
+  async function send(obj) {
+    if (!cmdChar) return;
+    try {
+      const json  = JSON.stringify(obj);
+      const bytes = new TextEncoder().encode(json);
+      await cmdChar.writeValue(bytes);
+      log('→ ' + json, 'tx');
+    } catch(e) {
+      log('// błąd TX: ' + e.message, 'err');
+    }
+  }
+
+  function jog(axis, steps) { send({ cmd:'jog', axis, steps }); }
+  function spindle(rpm, dir) { send({ cmd:'spindle', rpm, dir }); }
+  function estop()           { send({ cmd:'estop' }); }
+  function spindleCustom() {
+    const rpm = parseInt(document.getElementById('customRpm').value) || 60;
+    const dir = document.getElementById('customDir').value;
+    send({ cmd:'spindle', rpm, dir });
+  }
+
+  // ── MACROS ───────────────────────────────────────────────
+  let macros = JSON.parse(localStorage.getItem('ml_macros') || '[]');
+
+  function saveMacros() {
+    localStorage.setItem('ml_macros', JSON.stringify(macros));
+  }
+
+  function renderMacros() {
+    const grid = document.getElementById('macroGrid');
+    grid.innerHTML = '';
+    if (macros.length === 0) {
+      grid.innerHTML = '<div class="empty-macros" style="grid-column:1/-1">// brak makr — dodaj swoje komendy poniżej</div>';
+      return;
+    }
+    macros.forEach((m, i) => {
+      const btn = document.createElement('button');
+      btn.className = 'macro-btn';
+      if (!isConnected) btn.disabled = true;
+      btn.innerHTML = `<span class="mc-name">${m.name}</span><span class="mc-json">${m.json}</span>`;
+      btn.onclick = () => runMacro(i);
+
+      const del = document.createElement('button');
+      del.className = 'macro-del';
+      del.textContent = '✕';
+      del.title = 'Usuń makro';
+      del.onclick = (e) => { e.stopPropagation(); deleteMacro(i); };
+      btn.appendChild(del);
+      grid.appendChild(btn);
+    });
+  }
+
+  function runMacro(i) {
+    try {
+      const obj = JSON.parse(macros[i].json);
+      send(obj);
+    } catch(e) {
+      log('// błędny JSON w makrze: ' + e.message, 'err');
+    }
+  }
+
+  function deleteMacro(i) {
+    macros.splice(i, 1);
+    saveMacros();
+    renderMacros();
+  }
+
+  function addMacro() {
+    const name = document.getElementById('macroName').value.trim();
+    const json = document.getElementById('macroJSON').value.trim();
+    if (!name) { log('// podaj nazwę makra', 'err'); return; }
+    try {
+      JSON.parse(json);
+    } catch(e) {
+      log('// nieprawidłowy JSON: ' + e.message, 'err'); return;
+    }
+    macros.push({ name, json });
+    saveMacros();
+    renderMacros();
+    document.getElementById('macroName').value = '';
+    document.getElementById('macroJSON').value = '';
+    document.getElementById('macroForm').style.display = 'none';
+    log('// makro "' + name + '" zapisane ✓', 'ok');
+  }
+
+  function toggleForm() {
+    const f = document.getElementById('macroForm');
+    f.style.display = f.style.display === 'none' ? 'block' : 'none';
+  }
+
+  // patch setConnected to also refresh macros
+  const _origSetConnected = setConnected;
+  // we re-define after to re-enable macro buttons
+  const _innerSet = setConnected;
+
+  function setConnected(c) {
+    isConnected = c;
+    const pill = document.getElementById('pill');
+    const btn  = document.getElementById('btnConnect');
+    pill.textContent = c ? '● ONLINE' : '● OFFLINE';
+    pill.className   = c ? 'on' : 'off';
+    btn.textContent  = c ? '✕ ROZŁĄCZ' : '⬡ POŁĄCZ BLUETOOTH';
+    btn.className    = c ? 'active' : '';
+    document.querySelectorAll('.btn, #btnEstop').forEach(b => b.disabled = !c);
+    renderMacros();
+  }
+
+  renderMacros();
+  setConnected(false);
+</script>
+</body>
+</html>

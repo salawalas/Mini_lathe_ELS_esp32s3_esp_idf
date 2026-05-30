@@ -10,11 +10,13 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
+#include "nvs_flash.h"
 #include "nimble/nimble_port.h"
 #include "nimble/nimble_port_freertos.h"
 #include "host/ble_hs.h"
 #include "host/ble_gap.h"
 #include "host/ble_gatt.h"
+#include "host/ble_sm.h"
 #include "host/util/util.h" // ← ble_hs_util_ensure_addr
 #include "services/gap/ble_svc_gap.h"
 #include "services/gatt/ble_svc_gatt.h"
@@ -247,6 +249,20 @@ static int gap_event_cb(struct ble_gap_event *event, void *arg)
                           NULL, gap_event_cb, NULL);
         return 0;
 
+    case BLE_GAP_EVENT_ENC_CHANGE:
+        if (event->enc_change.status == 0)
+        {
+            ESP_LOGI(TAG, "Szyfrowanie OK");
+        }
+        else
+        {
+            // Niespójny/zepsuty bond → rozłącz, daj szansę na czyste połączenie
+            ESP_LOGW(TAG, "Szyfrowanie nieudane (status=%d) — rozlaczam",
+                     event->enc_change.status);
+            ble_gap_terminate(s_conn_handle, BLE_ERR_REM_USER_CONN_TERM);
+        }
+        return 0;
+
     case BLE_GAP_EVENT_SUBSCRIBE:
         if (event->subscribe.attr_handle == s_dro_handle)
         {
@@ -309,25 +325,35 @@ static void host_task_fn(void *arg)
     nimble_port_run();
 }
 
-// ── Init ─────────────────────────────────────────────────────
 esp_err_t ble_server_init(void)
 {
     ESP_LOGI(TAG, "Inicjalizacja BLE (NimBLE)...");
 
-    nimble_port_init();
+    // Wyczyść stare klucze bonding (nimble_bond w NVS)
+    {
+        nvs_handle_t h;
+        if (nvs_open("nimble_bond", NVS_READWRITE, &h) == ESP_OK) {
+            nvs_erase_all(h);
+            nvs_commit(h);
+            nvs_close(h);
+            ESP_LOGI(TAG, "Stare klucze bonding wyczyszczone");
+        }
+    }
 
-    // ── Security (SMP) — bonding ──────────────────────────
-    ble_hs_cfg.sm_bonding = 1;
-    ble_hs_cfg.sm_mitm = 0;
-    ble_hs_cfg.sm_sc = 0;
-    ble_hs_cfg.sm_our_key_dist = BLE_SM_PAIR_KEY_DIST_ENC;
-    ble_hs_cfg.sm_their_key_dist = BLE_SM_PAIR_KEY_DIST_ENC;
+    nimble_port_init();
+    ble_hs_cfg.sm_bonding = 0;
+    ble_hs_cfg.sm_mitm = 0;                // MITM protection
+    ble_hs_cfg.sm_sc = 0;                  // Secure Connections (BLE 4.2+)
+    ble_hs_cfg.sm_our_key_dist = 0;
+    ble_hs_cfg.sm_their_key_dist = 0;
+    ble_hs_cfg.sm_io_cap = BLE_HS_IO_NO_INPUT_OUTPUT;
+    ble_hs_cfg.sm_oob_data_flag = 0;       // no OOB
 
     // ── Bonding store (NVS) ───────────────────────────────
-    ble_store_config_init();                              // ← DODANE
-    ble_hs_cfg.store_read_cb = ble_store_config_read;     // ← DODANE
-    ble_hs_cfg.store_write_cb = ble_store_config_write;   // ← DODANE
-    ble_hs_cfg.store_delete_cb = ble_store_config_delete; // ← DODANE
+    // ble_store_config_init();                              // ← DODANE
+    // ble_hs_cfg.store_read_cb = ble_store_config_read;     // ← DODANE
+    // ble_hs_cfg.store_write_cb = ble_store_config_write;   // ← DODANE
+    // ble_hs_cfg.store_delete_cb = ble_store_config_delete; // ← DODANE
 
     // ── Mandatory services (0x1800, 0x1801) ──────────────
     ble_svc_gap_init();  // ← DODANE — Generic Access
