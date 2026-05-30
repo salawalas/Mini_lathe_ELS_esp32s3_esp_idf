@@ -1,4 +1,4 @@
-# Mini Lathe Controller v6.2
+# Mini Lathe Controller v6.2.0
 
 ## Third-party components
 
@@ -460,6 +460,7 @@ Pliki `.raw` wrzucone do `components/display/font/` sa automatycznie pakowane do
 - **Kondensator 1000uF/63V** przy zaciskach zasilania DM556 - **zalecany**.
 
 ---
+## Dodanie aplikacji webowej minilathe.html. Działa z poziomu androida, łączy się bezpośrednio z MiniLathe bez uzycia ustawień systemowych. Działa na Chrome "out of the box".
 
 ## Wskazówki pre-konstrukcyjne
 
