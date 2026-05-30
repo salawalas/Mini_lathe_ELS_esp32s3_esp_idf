@@ -253,6 +253,16 @@ static void wifi_event_handler(void *arg, esp_event_base_t base,
 // ── Init ───────────────────────────────────────────────────
 esp_err_t wifi_server_init(void)
 {
+    // Wycisz debug logi httpd i wifi (tylko INFO i wyższe)
+    esp_log_level_set("httpd", ESP_LOG_INFO);
+    esp_log_level_set("httpd_parse", ESP_LOG_INFO);
+    esp_log_level_set("httpd_txrx", ESP_LOG_INFO);
+    esp_log_level_set("httpd_sess", ESP_LOG_INFO);
+    esp_log_level_set("httpd_uri", ESP_LOG_INFO);
+    esp_log_level_set("wifi", ESP_LOG_INFO);
+    esp_log_level_set("esp_netif_lwip", ESP_LOG_INFO);
+    esp_log_level_set("event", ESP_LOG_WARN);
+
     ESP_LOGI(TAG, "Inicjalizacja Wi-Fi AP...");
 
     // Wczytaj credentials z NVS (fallback → #define)
