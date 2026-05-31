@@ -198,7 +198,7 @@ mini_lathe_v6/
 
 | # | Ekran | Dostep | Funkcja |
 |---|-------|--------|---------|
-|   | Menu | SW krotko | Lista 12 trybow |
+|   | Menu | SW krotko | Lista 13 trybow |
 | 1 | Dashboard | start | Live: RPM, Z pos, X pos, stany osi, status bazowania, SD, heap, wskaznik H/X |
 | 2 | JOG Z | Menu | Enkoder = krok osi Z, 5 rozmiarow kroku, regulacja predkosci % |
 | 3 | Posuw AUTO | Menu | Ciagly posuw osi Z, V_set/V_act, kierunek CW/CCW |
@@ -208,11 +208,10 @@ mini_lathe_v6/
 | 7 | Bazowanie osi | Menu | Homing Z i X, podejscie do krancowek |
 | 8 | G-code (SD) | Menu | Lista plikow, progress bar, pauza/stop, wykonanie linii |
 | 9 | Pozycja / Presety | Menu | Ustaw Z/X, 3 zapisywalne presety pozycji (NVS) |
-| 10 | DRO | Menu | Maksymalnie duze cyfry Z/X, regulacja jasnosci na zywo |
-| 11 | Ustawienia tokarki | Menu | Skok sruby Z/X, mikrostepping, max V, max RPM (NVS) |
-| 12 | Ustawienia systemowe | Menu | **Podmenu**: Podswietlenie, WiFi ON/OFF, BLE ON/OFF |
-| 13 | Kalibracja dotyku | Menu | Kalibracja 3-punktowa XPT2046/FT6x06, zapis NVS |
-| — | Numpad | Programowo | Klawiatura numeryczna 4×3, skalowalna (480×320 → 112px btn) |
+| 10 | Ustawienia tokarki | Menu | Skok sruby Z/X, mikrostepping, max V, max RPM (NVS) |
+| 11 | Ustawienia systemowe | Menu | **Podmenu**: Podswietlenie, WiFi ON/OFF, BLE ON/OFF, Kalibracja dotyku |
+| 12 | DRO | Menu | Maksymalnie duze cyfry Z/X, regulacja jasnosci na zywo |
+| 13 | Numpad | Menu | Klawiatura numeryczna 4x3, skalowalna (480x320 → 112px btn) |
 
 ---
 
