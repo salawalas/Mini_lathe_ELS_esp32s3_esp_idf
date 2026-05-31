@@ -26,6 +26,7 @@
 #include "esp_task_wdt.h"
 #include "wifi_server.h"
 #include "ble_server.h"
+#include "touch.h"
 #include <stdio.h>
 
 static const char *TAG = "MAIN";
@@ -272,6 +273,17 @@ void app_main(void)
     // ── G-code parser ────────────────────────────────────────
     gcode_init();
     ESP_LOGI(TAG, "Parser G-code gotowy.");
+
+    // ── Touch screen ──────────────────────────────────────
+#if CONFIG_TOUCH_TYPE_XPT2046 || CONFIG_TOUCH_TYPE_FT6X06
+    {
+        esp_err_t ret = touch_init();
+        if (ret == ESP_OK)
+            ESP_LOGI(TAG, "Touch init OK");
+        else
+            ESP_LOGW(TAG, "Touch init skipped: %s", esp_err_to_name(ret));
+    }
+#endif
 
     // ── WiFi / BLE – warunkowo przez NVS (Ustawienia) ─────
     {

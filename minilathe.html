@@ -17,7 +17,7 @@
     --red:      #ff1744;
     --green:    #00e676;
     --blue:     #2979ff;
-    --muted:    #4a5060;
+    --muted:    #8a90a0;
     --text:     #c8ccd8;
     --mono:     'Share Tech Mono', monospace;
     --ui:       'Rajdhani', sans-serif;
@@ -101,7 +101,7 @@
     font-family: var(--ui);
     font-size: 10px;
     letter-spacing: 2px;
-    color: var(--muted);
+    color: #fff;
     text-transform: uppercase;
     margin-bottom: 2px;
   }
@@ -119,7 +119,7 @@
   .sec-title {
     font-size: 10px;
     letter-spacing: 3px;
-    color: var(--muted);
+    color: #fff;
     text-transform: uppercase;
     margin-bottom: 7px;
     padding-left: 2px;
@@ -143,6 +143,7 @@
     transition: background .15s, border-color .15s, transform .1s;
     user-select: none;
     -webkit-user-select: none;
+    touch-action: manipulation;
   }
   .btn:active { transform: scale(0.94); }
   .btn:disabled { opacity: 0.25; cursor: not-allowed; transform: none; }
@@ -393,12 +394,12 @@
 <div class="section">
   <div class="sec-title">Jog — Oś Z</div>
   <div class="grid3">
-    <button class="btn btn-z" disabled onclick="jog('Z',-100)">◀◀ -100</button>
-    <button class="btn btn-z" disabled onclick="jog('Z',-10)"> ◀ -10</button>
-    <button class="btn btn-z" disabled onclick="jog('Z',-1)">  ◀ -1</button>
-    <button class="btn btn-z" disabled onclick="jog('Z', 1)">  +1 ▶</button>
-    <button class="btn btn-z" disabled onclick="jog('Z', 10)"> +10 ▶</button>
-    <button class="btn btn-z" disabled onclick="jog('Z', 100)">+100 ▶▶</button>
+    <button class="btn btn-z" disabled onclick="jog('Z',-1.00)">◀◀ -1.0</button>
+    <button class="btn btn-z" disabled onclick="jog('Z',-0.10)"> ◀ -0.1</button>
+    <button class="btn btn-z" disabled onclick="jog('Z',-0.05)">  ◀ -0.05</button>
+    <button class="btn btn-z" disabled onclick="jog('Z', 0.05)">  +0.05 ▶</button>
+    <button class="btn btn-z" disabled onclick="jog('Z', 0.10)"> +0.1 ▶</button>
+    <button class="btn btn-z" disabled onclick="jog('Z', 1.00)">+1.0 ▶▶</button>
   </div>
 </div>
 
@@ -406,10 +407,10 @@
 <div class="section">
   <div class="sec-title">Jog — Oś X</div>
   <div class="grid2">
-    <button class="btn btn-x" disabled onclick="jog('X',-10)">◀ -10</button>
-    <button class="btn btn-x" disabled onclick="jog('X', 10)">+10 ▶</button>
-    <button class="btn btn-x" disabled onclick="jog('X',-1)"> ◀ -1</button>
-    <button class="btn btn-x" disabled onclick="jog('X',  1)">+1 ▶</button>
+    <button class="btn btn-x" disabled onclick="jog('X',-0.10)">◀ -0.1</button>
+    <button class="btn btn-x" disabled onclick="jog('X', 0.10)">+0.1 ▶</button>
+    <button class="btn btn-x" disabled onclick="jog('X',-0.05)"> ◀ -0.05</button>
+    <button class="btn btn-x" disabled onclick="jog('X', 0.05)">+0.05 ▶</button>
   </div>
 </div>
 
@@ -565,7 +566,7 @@
     }
   }
 
-  function jog(axis, steps) { send({ cmd:'jog', axis, steps }); }
+  function jog(axis, mm) { send({ cmd:'jog', axis, mm }); }
   function spindle(rpm, dir) { send({ cmd:'spindle', rpm, dir }); }
   function estop()           { send({ cmd:'estop' }); }
   function spindleCustom() {

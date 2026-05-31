@@ -1,0 +1,34 @@
+menu "Touch Screen Configuration"
+
+choice TOUCH_TYPE
+    prompt "Touch controller type"
+    default TOUCH_TYPE_NONE
+    help
+        Select the touch screen controller used with your TFT display.
+
+config TOUCH_TYPE_NONE
+    bool "None (disabled)"
+config TOUCH_TYPE_XPT2046
+    bool "XPT2046 (SPI resistive)"
+config TOUCH_TYPE_FT6X06
+    bool "FT6x06 (I2C capacitive)"
+
+endchoice
+
+if TOUCH_TYPE_XPT2046
+
+config TOUCH_XPT2046_CS
+    int "CS pin"
+    default 21
+    help
+        GPIO for XPT2046 chip select. Shares SPI2 bus with TFT.
+
+config TOUCH_XPT2046_IRQ
+    int "IRQ pin (optional, -1 = none)"
+    default -1
+    help
+        GPIO for XPT2046 touch interrupt. Set to -1 to disable.
+
+endif # TOUCH_TYPE_XPT2046
+
+endmenu

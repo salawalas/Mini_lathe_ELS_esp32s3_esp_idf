@@ -12,6 +12,8 @@ typedef enum {
     SCREEN_DRO,         // DRO – duże cyfry Z/X
     SCREEN_SETTINGS_LATHE,   // Ustawienia tokarki
     SCREEN_SETTINGS_SYSTEM,  // Ustawienia systemowe (podmenu)
+    SCREEN_TOUCH_CALIB,      // Kalibracja dotyku
+    SCREEN_NUMPAD,           // Klawiatura numeryczna (nakładka)
     SCREEN_COUNT
 } screen_id_t;
 

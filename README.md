@@ -177,14 +177,18 @@ mini_lathe_v6/
 │ ├── buzzer/                   # sygnalizator dzwiekowy PWM 4 kHz (GPIO48)
 │ ├── wifi_server/              # WiFi AP + HTTP REST API + embedded web DRO page
 │ ├── ble_server/               # BLE GATT server (JSON telemetry + commands)
-│ └── ui_menu/                  # 13 ekranow UI, nawigacja enkoderem, NVS, screensaver
+│ ├── touch/                    # ekran dotykowy: XPT2046 (SPI), FT6x06 (I2C), kalibracja, gesty
+│ └── ui_menu/                  # 15 ekranow UI, nawigacja enkoderem, NVS, screensaver, touch
 │       ├── homing_state.c/.h     # globalny stan bazowania (g_homed)
 │       ├── screen_homing.inc     # ekran bazowania osi
 │       ├── screen_backlight.inc  # ekran regulacji podswietlenia
 │       ├── screen_els.inc        # ekran ELS gwintowania
 │       ├── screen_gcode.inc      # ekran G-code z karty SD
 │       ├── screen_axis_x.inc     # ekran osi X (JOG / AUTO / CYKL ZX)
-│       └── screen_position.inc   # ekran pozycji i presetow (NVS)
+│       ├── screen_position.inc   # ekran pozycji i presetow (NVS)
+│       ├── screen_dro.inc        # ekran DRO (duze cyfry Z/X)
+│       ├── screen_touch_calib.inc # kalibracja dotyku 3-punktowa
+│       └── screen_numpad.inc     # klawiatura numeryczna (480x320)
 └── tools/
     ├── generate_logo.py          # generuje testowe logo 48x48
     └── png_to_raw.py             # konwertuje PNG -> raw RGB565
@@ -207,6 +211,8 @@ mini_lathe_v6/
 | 10 | DRO | Menu | Maksymalnie duze cyfry Z/X, regulacja jasnosci na zywo |
 | 11 | Ustawienia tokarki | Menu | Skok sruby Z/X, mikrostepping, max V, max RPM (NVS) |
 | 12 | Ustawienia systemowe | Menu | **Podmenu**: Podswietlenie, WiFi ON/OFF, BLE ON/OFF |
+| 13 | Kalibracja dotyku | Menu | Kalibracja 3-punktowa XPT2046/FT6x06, zapis NVS |
+| — | Numpad | Programowo | Klawiatura numeryczna 4×3, skalowalna (480×320 → 112px btn) |
 
 ---
 
@@ -350,6 +356,14 @@ mini_lathe_v6/
 - **Adaptacyjne layouty UI** — wszystkie ekrany skaluja sie do rozdzielczosci (160x128 do 480x320)
 - **Adaptacyjne fonty** — `FONT_LABEL` / `FONT_VALUE` / `FONT_HEADER` zalezne od `DISP_H` (FONT_LG na duzych ekranach)
 - **Kompatybilnosc display_compat.h** — mapowanie scale->font dla starszego API
+
+### Ekran dotykowy (touch screen)
+- **Obslugiwane kontrolery**: XPT2046 (SPI rezystancyjny), FT6x06 (I2C pojemnościowy — stub)
+- **Konfiguracja**: `idf.py menuconfig` → Touch Screen Configuration
+- **Kalibracja 3-punktowa**: Menu → Kalibracja dotyku → dotknij 3 krzyżyki → zapis w NVS
+- **Gesty**: press, release, hold (>500ms), swipe (left/right/up/down)
+- **Numpad**: klawiatura numeryczna 4x3, automatycznie skalowana do rozdzielczości
+- ⚠ **UWAGA**: Nie włączaj jednocześnie `CONFIG_TOUCH_TYPE_XPT2046` i `CONFIG_XPT2046_ENABLE_*` (biblioteka ILI9340). Oba próbują przejąć SPI2 — będzie konflikt. Domyślnie oba są wyłączone.
 
 ### Ustawienia (NVS)
 Ustawienia przechowywane w NVS (trwale przez resek):

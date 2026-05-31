@@ -140,9 +140,10 @@ static const char *MENU_NAMES[] = {
     "Bazowanie osi",
     "G-code (SD)",
     "Pozycja / Presety",
-    "DRO (duze cyfry)",
     "Ustawienia tokarki",
     "Ustawienia systemowe",
+    "DRO (duze cyfry)",
+    "Numpad",
     // SCREEN_MENU (ostatni) nie pojawia sie na liscie – sluzy jako sentinel
 };
 
@@ -151,8 +152,10 @@ static const screen_id_t MENU_ORDER[] = {
     SCREEN_MAIN, SCREEN_JOG, SCREEN_FEED, SCREEN_SPINDLE,
     SCREEN_ELS, SCREEN_AXIS_X,
     SCREEN_HOMING, SCREEN_GCODE,
-    SCREEN_POSITION, SCREEN_DRO,
-    SCREEN_SETTINGS_LATHE, SCREEN_SETTINGS_SYSTEM, SCREEN_MENU};
+    SCREEN_POSITION,
+    SCREEN_SETTINGS_LATHE, SCREEN_SETTINGS_SYSTEM,
+    SCREEN_DRO, SCREEN_NUMPAD,
+    SCREEN_MENU};
 
 // Sprawdź czy MENU_NAMES zgadza się z MENU_ORDER (minus sentinel SCREEN_MENU)
 _Static_assert(
@@ -202,6 +205,7 @@ static void draw_footer(void)
         "ENC=jasn SW=menu BTN3=0",   // SCREEN_DRO
         "ENC=val BTN3=zapisz",       // SCREEN_SETTINGS_LATHE
         "SW=wybierz BTN2=wroc",      // SCREEN_SETTINGS_SYSTEM
+        "Dotknij krzyzyk BTN2=wroc", // SCREEN_TOUCH_CALIB
     };
     if (ui.uptime_ms < ui.notify_until_ms && ui.notify_msg[0])
     {
@@ -844,8 +848,8 @@ static void handle_settings_lathe(encoder_event_t evt)
 // ------------------------------------------------------------
 //  EKRAN: SETTINGS SYSTEM (podmenu: Podświetlenie, WiFi, BLE)
 // ------------------------------------------------------------
-#define SYSMENU_COUNT 3
-static const char *SYSMENU_NAMES[] = {"Podswietlenie", "WiFi", "BLE"};
+#define SYSMENU_COUNT 4
+static const char *SYSMENU_NAMES[] = {"Podswietlenie", "WiFi", "BLE", "Kalibracja dotyku"};
 static uint8_t sysmenu_sel = 0;
 static float  sys_wifi_en = 1.0f;   // cached, loaded once from NVS
 static float  sys_ble_en  = 0.0f;
@@ -877,7 +881,8 @@ static void draw_settings_system(void)
         bool sel = (i == sysmenu_sel);
         if (i == 0)      snprintf(buf, sizeof(buf), ">");
         else if (i == 1) snprintf(buf, sizeof(buf), "%s", sys_wifi_en > 0.5f ? "ON" : "OFF");
-        else             snprintf(buf, sizeof(buf), "%s", sys_ble_en > 0.5f ? "ON" : "OFF");
+        else if (i == 2) snprintf(buf, sizeof(buf), "%s", sys_ble_en > 0.5f ? "ON" : "OFF");
+        else             snprintf(buf, sizeof(buf), ">");
 
         uint16_t bg = sel ? COL_SEL : COLOR_BLACK;
         display_fill_rect(0, y, SCR_W, ROW_H, bg);
@@ -924,10 +929,12 @@ static void handle_settings_system(encoder_event_t evt)
             sys_wifi_en = (sys_wifi_en > 0.5f) ? 0.0f : 1.0f;
             sysmenu_save_toggle("wifi_en", sys_wifi_en > 0.5f);
             ui_menu_notify(sys_wifi_en > 0.5f ? "WiFi ON (restart!)" : "WiFi OFF", COL_OK, 1500);
-        } else {
+        } else if (sysmenu_sel == 2) {
             sys_ble_en = (sys_ble_en > 0.5f) ? 0.0f : 1.0f;
             sysmenu_save_toggle("ble_en", sys_ble_en > 0.5f);
             ui_menu_notify(sys_ble_en > 0.5f ? "BLE ON (restart!)" : "BLE OFF", COL_OK, 1500);
+        } else {
+            ui_menu_goto(SCREEN_TOUCH_CALIB);
         }
         break;
     case ENCODER_EVT_BTN2_PRESS:
@@ -958,6 +965,10 @@ static void handle_settings_system(encoder_event_t evt)
 
 #include "screen_dro.inc"
 
+#include "screen_touch_calib.inc"
+
+#include "screen_numpad.inc"
+
 // ------------------------------------------------------------
 //  Tablica ekranów
 // ------------------------------------------------------------
@@ -968,12 +979,12 @@ static const draw_fn_t s_draw[] = {
     draw_main, draw_menu, draw_jog, draw_feed, draw_spindle,
     draw_els, draw_axis_x, draw_homing, draw_backlight,
     draw_gcode, draw_position, draw_dro,
-    draw_settings_lathe, draw_settings_system};
+    draw_settings_lathe, draw_settings_system, draw_touch_calib, draw_numpad};
 static const handle_fn_t s_handle[] = {
     handle_main, handle_menu, handle_jog, handle_feed, handle_spindle,
     handle_els, handle_axis_x, handle_homing, handle_backlight,
     handle_gcode, handle_position, handle_dro,
-    handle_settings_lathe, handle_settings_system};
+    handle_settings_lathe, handle_settings_system, handle_touch_calib, handle_numpad};
 
 // ------------------------------------------------------------
 //  E-STOP callback z ISR spindle

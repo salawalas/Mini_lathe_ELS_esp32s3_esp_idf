@@ -50,6 +50,11 @@ CONFIG_SPI2_HOST=y
 # SD MISO współdzielone z TFT na SPI2
 CONFIG_XPT2046_ENABLE_SAME_BUS=y
 
+# ── Touch screen (domyślnie wyłączony) ──────────────────────
+# CONFIG_TOUCH_TYPE_NONE=y
+# CONFIG_TOUCH_TYPE_XPT2046 is not set
+# Aby włączyć XPT2046: idf.py menuconfig → Touch Screen Configuration
+
 # ── Wi-Fi ───────────────────────────────────────────────────
 CONFIG_ESP_WIFI_ENABLED=y
 CONFIG_ESP_WIFI_SOFTAP_SUPPORT=y

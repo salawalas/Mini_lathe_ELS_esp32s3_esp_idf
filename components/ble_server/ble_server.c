@@ -95,8 +95,21 @@ static void exec_ble_command(const char *json, int len)
         }
     }
 
+    // "steps" = mikrokroki, "mm" = milimetry (przeliczamy na kroki)
+    p = strstr(json, "\"mm\"");
+    if (p) {
+        p = strchr(p, ':');
+        if (p) {
+            float mm = (float)atof(p + 1);
+            // Użyj poprawnej osi do przeliczenia mm→kroki
+            float spm = (axis[0] == 'X' || axis[0] == 'x')
+                        ? axis_get_steps_per_mm(g_axis_x)
+                        : axis_get_steps_per_mm(g_axis_z);
+            steps = (int)(mm * spm);
+        }
+    }
     p = strstr(json, "\"steps\"");
-    if (p)
+    if (p && steps == 0)  // "steps" ma priorytet tylko gdy "mm" nie było
     {
         p = strchr(p, ':');
         if (p)
@@ -134,23 +147,22 @@ static void exec_ble_command(const char *json, int len)
         if (g_axis_x)
             axis_stop(g_axis_x);
     }
-    else if (strcmp(cmd, "jog") == 0)
-    {
+    else if (strcmp(cmd, "jog") == 0) {
         if (steps == 0)
             steps = 1;
-        if (steps > 500)
-            steps = 500;
+        if (steps > 64000)
+            steps = 64000;
         axis_dir_t adir = (steps > 0) ? AXIS_DIR_POS : AXIS_DIR_NEG;
         uint16_t abs_s = (uint16_t)(steps > 0 ? steps : -steps);
         if (axis[0] == 'X' || axis[0] == 'x')
         {
             if (g_axis_x && axis_get_state(g_axis_x) == AXIS_STATE_IDLE)
-                axis_jog(g_axis_x, adir, abs_s, 40);
+                axis_jog(g_axis_x, adir, abs_s, 80);
         }
         else
         {
             if (stepper_get_state() == STEPPER_STATE_IDLE)
-                axis_jog(g_axis_z, adir, abs_s, 40);
+                axis_jog(g_axis_z, adir, abs_s, 80);
         }
     }
     else if (strcmp(cmd, "spindle") == 0)
@@ -243,10 +255,25 @@ static int gap_event_cb(struct ble_gap_event *event, void *arg)
     case BLE_GAP_EVENT_DISCONNECT:
         ESP_LOGI(TAG, "Klient BLE rozlaczony (reason=%d)",
                  event->disconnect.reason);
-        s_conn_handle = BLE_HS_CONN_HANDLE_NONE; // ← DODANE
+        s_conn_handle = BLE_HS_CONN_HANDLE_NONE;
         s_notify_enabled = false;
+
+        // Restart advertising ze świeżymi danymi
+        ble_gap_adv_stop();
+        vTaskDelay(pdMS_TO_TICKS(200));  // daj kontrolerowi chwilę
+
+        struct ble_hs_adv_fields fields = {0};
+        fields.flags = BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP;
+        fields.name = (void *)DEVICE_NAME;
+        fields.name_len = strlen(DEVICE_NAME);
+        fields.name_is_complete = 1;
+        ble_gap_adv_set_fields(&fields);
+
+        struct ble_gap_adv_params adv_params = {0};
+        adv_params.conn_mode = BLE_GAP_CONN_MODE_UND;
+        adv_params.disc_mode = BLE_GAP_DISC_MODE_GEN;
         ble_gap_adv_start(BLE_OWN_ADDR_PUBLIC, NULL, BLE_HS_FOREVER,
-                          NULL, gap_event_cb, NULL);
+                          &adv_params, gap_event_cb, NULL);
         return 0;
 
     case BLE_GAP_EVENT_ENC_CHANGE:
@@ -329,6 +356,9 @@ esp_err_t ble_server_init(void)
 {
     ESP_LOGI(TAG, "Inicjalizacja BLE (NimBLE)...");
 
+    // Wycisz NimBLE logi (notify co 300ms spamuje INFO)
+    esp_log_level_set("NimBLE", ESP_LOG_WARN);
+
     // Wyczyść stare klucze bonding (nimble_bond w NVS)
     {
         nvs_handle_t h;
@@ -349,11 +379,13 @@ esp_err_t ble_server_init(void)
     ble_hs_cfg.sm_io_cap = BLE_HS_IO_NO_INPUT_OUTPUT;
     ble_hs_cfg.sm_oob_data_flag = 0;       // no OOB
 
-    // ── Bonding store (NVS) ───────────────────────────────
-    // ble_store_config_init();                              // ← DODANE
-    // ble_hs_cfg.store_read_cb = ble_store_config_read;     // ← DODANE
-    // ble_hs_cfg.store_write_cb = ble_store_config_write;   // ← DODANE
-    // ble_hs_cfg.store_delete_cb = ble_store_config_delete; // ← DODANE
+    // ── Bonding store (NVS) — tylko gdy bonding=1 ────────
+    if (ble_hs_cfg.sm_bonding) {
+        ble_store_config_init();
+        ble_hs_cfg.store_read_cb = ble_store_config_read;
+        ble_hs_cfg.store_write_cb = ble_store_config_write;
+        ble_hs_cfg.store_delete_cb = ble_store_config_delete;
+    }
 
     // ── Mandatory services (0x1800, 0x1801) ──────────────
     ble_svc_gap_init();  // ← DODANE — Generic Access
