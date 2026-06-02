@@ -65,7 +65,7 @@ static esp_err_t _spiffs_init(void)
     esp_vfs_spiffs_conf_t conf = {
         .base_path              = "/spiffs",
         .partition_label        = NULL,
-        .max_files              = 8,
+        .max_files              = 12,   // 9 fonts + logo + headroom
         // format_if_mount_failed=true: naprawi uszkodzoną partycję
         // UWAGA: formatowanie usuwa dane – fonty zostaną wgrane przy flash
         .format_if_mount_failed = false,
@@ -118,8 +118,11 @@ esp_err_t display_init(void)
         uint8_t fw, fh;
         if (GetFontx(g_font[i], 'A', buf, &fw, &fh))
             ESP_LOGI(TAG, "Font[%d] OK: %dx%d px", i, fw, fh);
-        else
+        else {
             ESP_LOGE(TAG, "Font[%d] BLAD: %s", i, FONT_PATHS[i]);
+            // Fallback: use FONT_LG for missing XL/XXL fonts
+            if (i >= 7) memcpy(&g_font[i], &g_font[2], sizeof(FontxFile));
+        }
     }
 
     // Podświetlenie przez LEDC
@@ -179,10 +182,10 @@ void display_string(int x, int y, const char *s,
     if (!s || !*s) return;
     if (font_size > FONT_XXL) font_size = FONT_SM;
 
-    // High-res scaling: SM→MD (8×16→12×24)
-    // MD and LG stay as-is (compat layer already maps scales to MD/LG)
+    // High-res scaling: SM→XL (8×16→24×48), MD→XXL (12×24→40×64)
 #if DISP_H >= 400
-    if (font_size == FONT_SM) font_size = FONT_MD;
+    if (font_size == FONT_SM) font_size = FONT_XL;
+    else if (font_size == FONT_MD) font_size = FONT_XXL;
 #endif
 
     const uint8_t font_h[] = { FONT_SM_H, FONT_MD_H, FONT_LG_H,
@@ -223,7 +226,8 @@ int display_text_width(const char *s, uint8_t font_size)
                      FONT_XL_W, FONT_XXL_W};
     if (!s || font_size > FONT_XXL) return 0;
 #if DISP_H >= 400
-    if (font_size == FONT_SM) font_size = FONT_MD;
+    if (font_size == FONT_SM) font_size = FONT_XL;
+    else if (font_size == FONT_MD) font_size = FONT_XXL;
 #endif
     return strlen(s) * w[font_size];
 }

@@ -108,7 +108,7 @@
 #define FONT_XXL    8   // Gothic 32×64px
 #define FONT_XL_W   24
 #define FONT_XL_H   48
-#define FONT_XXL_W  32
+#define FONT_XXL_W  40  // regenerated as 40×64
 #define FONT_XXL_H  64
 
 // ------------------------------------------------------------

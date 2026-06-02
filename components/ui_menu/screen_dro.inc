@@ -45,7 +45,8 @@ static void draw_dro(void)
     // ── Główny obszar DRO ──
     int content_top = status_h + 4;
     int content_h   = SCR_H - status_h - 8;
-    int row_h       = content_h / 2;
+    // Podział: góra na Z, dół na X, z separatorem
+    int row_h = (content_h - 6) / 2;  // 6px na separator
 
     // Oś Z – górna połowa
     int z_y = content_top;
@@ -56,19 +57,20 @@ static void draw_dro(void)
         bool zh = limits_axis_homed(AXIS_Z);
         uint16_t zc = zh ? DRO_Z_COLOR : COL_WARN;
 
-        // Etykieta "Z"
-        display_string(UI_PAD_X, z_y + 4, "Z", FONT_LG, zc, DRO_BG);
+        // Etykieta "Z" – wyrównana do środka dużego fontu
+        display_string(UI_PAD_X, z_y + (FONT_XXL_H - FONT_LG_H) / 2,
+                       "Z", FONT_LG, zc, DRO_BG);
 
-        // Wartość – maksymalnie duża
+        // Wartość – 32×64
         snprintf(buf, sizeof(buf), "%+6d.%02d", zi, zd);
         int vw = display_text_width(buf, FONT_XXL);
-        display_string(SCR_W - vw - UI_PAD_X, z_y + 2, buf, FONT_XXL, zc, DRO_BG);
+        display_string(SCR_W - vw - UI_PAD_X, z_y, buf, FONT_XXL, zc, DRO_BG);
 
-        // Jednostka + status homingu
+        // Jednostka + status homingu – pod wartością
         snprintf(buf, sizeof(buf), "mm %s", zh ? "[OK]" : "[--]");
-        display_string(SCR_W - display_text_width(buf, FONT_MD) - UI_PAD_X,
-                       z_y + FONT_LG_H + 8, buf, FONT_MD,
-                       zh ? COL_OK : COL_WARN, DRO_BG);
+        int uw = display_text_width(buf, FONT_MD);
+        display_string(SCR_W - uw - UI_PAD_X, z_y + FONT_XXL_H + 2,
+                       buf, FONT_MD, zh ? COL_OK : COL_WARN, DRO_BG);
     }
 
     // Separator
@@ -84,15 +86,20 @@ static void draw_dro(void)
         bool xh = limits_axis_homed(AXIS_X);
         uint16_t xc = xh ? DRO_X_COLOR : COL_WARN;
 
-        display_string(UI_PAD_X, x_y + 4, "X", FONT_LG, xc, DRO_BG);
+        // Etykieta "X"
+        display_string(UI_PAD_X, x_y + (FONT_XXL_H - FONT_LG_H) / 2,
+                       "X", FONT_LG, xc, DRO_BG);
+
+        // Wartość
         snprintf(buf, sizeof(buf), "%+6d.%02d", xi, xd);
         int vw = display_text_width(buf, FONT_XXL);
-        display_string(SCR_W - vw - UI_PAD_X, x_y + 2, buf, FONT_XXL, xc, DRO_BG);
+        display_string(SCR_W - vw - UI_PAD_X, x_y, buf, FONT_XXL, xc, DRO_BG);
 
+        // Jednostka
         snprintf(buf, sizeof(buf), "mm %s", xh ? "[OK]" : "[--]");
-        display_string(SCR_W - display_text_width(buf, FONT_MD) - UI_PAD_X,
-                       x_y + FONT_LG_H + 8, buf, FONT_MD,
-                       xh ? COL_OK : COL_WARN, DRO_BG);
+        int uw = display_text_width(buf, FONT_MD);
+        display_string(SCR_W - uw - UI_PAD_X, x_y + FONT_XXL_H + 2,
+                       buf, FONT_MD, xh ? COL_OK : COL_WARN, DRO_BG);
     } else {
         display_string(UI_PAD_X, x_y + 4, "X: --", FONT_MD, COL_LABEL, DRO_BG);
     }

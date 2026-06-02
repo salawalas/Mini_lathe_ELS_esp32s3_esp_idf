@@ -1439,7 +1439,7 @@ void lcdDrawFillArrow(TFT_t *dev, uint16_t x0, uint16_t y0, uint16_t x1, uint16_
 int lcdDrawChar(TFT_t *dev, FontxFile *fxs, uint16_t x, uint16_t y, uint8_t ascii, uint16_t color)
 {
 	uint16_t xx, yy, bit, ofs;
-	unsigned char fonts[128]; // font pattern
+	unsigned char fonts[FontxGlyphBufSize]; // font pattern (512B – enough for 64×64)
 	unsigned char pw, ph;
 	int h, w;
 	uint16_t mask;

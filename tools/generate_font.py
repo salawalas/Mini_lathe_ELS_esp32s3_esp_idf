@@ -86,15 +86,23 @@ def generate_fontx2(
     # Build header
     name_bytes = name.encode("ascii", errors="replace")[:8].ljust(8, b" ")
     header = b"FONTX2" + name_bytes
-    header += struct.pack("<BBHH", glyph_w, glyph_h, 1, 0)  # 1 block
+    header += struct.pack("<BBHH", glyph_w, glyph_h, 0, 0)  # 0 blocks = ANK font
     
-    # Block table: start_code, end_code, offset
-    block_offset = len(header) + 12  # header + block table
-    block_table = struct.pack("<III", start_code, end_code, block_offset)
+    # No block table for ANK fonts (block count = 0)
+    # Glyph data starts right after header
     
-    # Generate glyphs
+    # FONTX library expects glyphs from code 0x00 (offsets = 17 + code * bytes_per_glyph)
+    # Add placeholder (empty) glyphs for codes 0x00-0x1F
+    full_start = 0x00
+    full_end = 0x7F
+    total_glyphs = full_end - full_start + 1  # 128 glyphs
+    empty_glyph = bytearray(bytes_per_glyph)  # all zeros
+    
     glyphs_data = bytearray()
-    for code in range(start_code, end_code + 1):
+    for code in range(full_start, full_end + 1):
+        if code < start_code or code > end_code:
+            glyphs_data.extend(empty_glyph)
+            continue
         ch = chr(code)
         img = Image.new("1", (glyph_w, glyph_h), color=0)
         draw = ImageDraw.Draw(img)
@@ -122,13 +130,12 @@ def generate_fontx2(
     # Write file
     with open(output_path, "wb") as f:
         f.write(header)
-        f.write(block_table)
         f.write(glyphs_data)
     
-    file_size = len(header) + len(block_table) + len(glyphs_data)
+    file_size = len(header) + len(glyphs_data)
     print(f"Generated: {output_path}")
     print(f"  Glyph size: {glyph_w}×{glyph_h} px")
-    print(f"  Chars: {start_code:#04x}-{end_code:#04x} ({num_chars} glyphs)")
+    print(f"  Chars: {start_code:#04x}-{end_code:#04x} ({num_chars} valid, {total_glyphs} total)")
     print(f"  Bytes per glyph: {bytes_per_glyph}")
     print(f"  Total size: {file_size} bytes")
     print(f"  Name in header: '{name}'")

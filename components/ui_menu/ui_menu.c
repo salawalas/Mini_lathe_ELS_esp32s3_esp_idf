@@ -1076,7 +1076,7 @@ void ui_menu_init(void)
     spindle_set_max_rpm((uint16_t)s_set[4].value);
 
     spindle_register_estop_callback(ui_estop_cb, NULL);
-    xTaskCreate(ui_task, "ui_task", 6144, NULL, 4, NULL);
+    xTaskCreate(ui_task, "ui_task", 8192, NULL, 4, NULL);
 }
 
 void ui_menu_goto(screen_id_t screen)
