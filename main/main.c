@@ -44,7 +44,7 @@ static const char *TAG = "MAIN";
 #define SPLASH_L4 (SPLASH_CONTENT_Y + SPLASH_ROW_H * 3)
 #define SPLASH_TITLE_X (DISP_W / 2 - DISP_W / 9)
 #define SPLASH_FOOT_X (DISP_W / 2 - DISP_W / 11)
-#define SPLASH_TEXT_Y ((SPLASH_HEADER_H - FONT_SM_H) / 2)
+#define SPLASH_TEXT_Y ((SPLASH_HEADER_H - FONT_MD_H) / 2)
 
 // ── 1. Ekran logo – 5 sekund ──────────────────────────────────
 static void show_logo_screen(void)
@@ -141,21 +141,27 @@ static void show_splash_screen(void)
     display_clear(COL_BLACK);
     display_fill_rect(0, 0, DISP_W, SPLASH_HEADER_H, rgb565(0, 80, 160));
     {
-        int _tw = display_text_width(LATHE_NAME, FONT_SM);
+        int _tw = display_text_width(LATHE_NAME, FONT_MD);
         display_string((DISP_W - _tw) / 2, SPLASH_TEXT_Y,
-                       LATHE_NAME, FONT_SM, COL_WHITE, 0xFFFF);
+                       LATHE_NAME, FONT_MD, COL_WHITE, 0xFFFF);
     }
 
-    display_string(8, SPLASH_L1, "ESP32-S3 / IDF 5.5", FONT_SM, COL_LIGHT_GREY, COL_BLACK);
-    display_string(8, SPLASH_L2, "3x DM556 + NEMA23", FONT_SM, COL_GREEN, COL_BLACK);
-    display_string(8, SPLASH_L3, "ELS + E-STOP", FONT_SM, COL_CYAN, COL_BLACK);
-    display_string(8, SPLASH_L4, "Inicjalizacja...", FONT_SM, COL_YELLOW, COL_BLACK);
+    {
+        int w1 = display_text_width("ESP32-S3 / IDF 5.5", FONT_MD);
+        display_string((DISP_W - w1) / 2, SPLASH_L1, "ESP32-S3 / IDF 5.5", FONT_MD, COL_LIGHT_GREY, COL_BLACK);
+        int w2 = display_text_width("3x DM556 + NEMA23", FONT_MD);
+        display_string((DISP_W - w2) / 2, SPLASH_L2, "3x DM556 + NEMA23", FONT_MD, COL_GREEN, COL_BLACK);
+        int w3 = display_text_width("ELS + E-STOP", FONT_MD);
+        display_string((DISP_W - w3) / 2, SPLASH_L3, "ELS + E-STOP", FONT_MD, COL_CYAN, COL_BLACK);
+        int w4 = display_text_width("Inicjalizacja...", FONT_MD);
+        display_string((DISP_W - w4) / 2, SPLASH_L4, "Inicjalizacja...", FONT_MD, COL_YELLOW, COL_BLACK);
+    }
 
     display_fill_rect(0, SPLASH_FOOTER_Y, DISP_W, SPLASH_FOOTER_H, rgb565(20, 20, 20));
     {
-        int _fw = display_text_width(LATHE_NAME, FONT_SM);
+        int _fw = display_text_width(LATHE_NAME, FONT_MD);
         display_string((DISP_W - _fw) / 2, SPLASH_FOOTER_Y + SPLASH_TEXT_Y,
-                       LATHE_NAME, FONT_SM, COL_BLUE, 0xFFFF);
+                       LATHE_NAME, FONT_MD, COL_BLUE, 0xFFFF);
     }
     display_flush();
     vTaskDelay(pdMS_TO_TICKS(5000));
@@ -181,11 +187,13 @@ static void show_homing_warning(void)
         int uw = display_text_width("! UWAGA !", FONT_LG);
         display_string((DISP_W - uw) / 2, mid_y - 36,
                        "! UWAGA !", FONT_LG, fg, 0xFFFF);
-        display_string(8, mid_y,
-                       "Brak bazowania osi!", FONT_MD, fg, 0xFFFF);
-        display_string(8, mid_y + 30,
+        int bw = display_text_width("Brak bazowania osi!", FONT_LG);
+        display_string((DISP_W - bw) / 2, mid_y,
+                       "Brak bazowania osi!", FONT_LG, fg, 0xFFFF);
+        int iw = display_text_width("Idz do Menu > Bazowanie osi", FONT_MD);
+        display_string((DISP_W - iw) / 2, mid_y + 34,
                        "Idz do Menu > Bazowanie osi",
-                       FONT_SM, rgb565(255, 200, 200), 0xFFFF);
+                       FONT_MD, rgb565(255, 200, 200), 0xFFFF);
         display_flush();
 
         vTaskDelay(pdMS_TO_TICKS(BLINK_HALF_MS));

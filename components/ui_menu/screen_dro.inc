@@ -22,8 +22,8 @@ static void draw_dro(void)
     spindle_status_t sp;
     spindle_get_status(&sp);
 
-    // ── Górny pasek statusu (cienki) ──
-    int status_h = FONT_SM_H + 4;
+    // ── Górny pasek statusu ──
+    int status_h = FONT_MD_H + 8;
     uint16_t status_bg = sp.estop_active ? rgb565(160, 0, 0)
                        : (!g_homed)     ? rgb565(100, 40, 0)
                        :                   rgb565(0, 30, 60);
@@ -38,8 +38,8 @@ static void draw_dro(void)
     } else {
         snprintf(buf, sizeof(buf), "RPM: --");
     }
-    int tw = display_text_width(buf, FONT_SM);
-    display_string((SCR_W - tw) / 2, 2, buf, FONT_SM,
+    int tw = display_text_width(buf, FONT_MD);
+    display_string((SCR_W - tw) / 2, 4, buf, FONT_MD,
                    sp.estop_active ? COL_WHITE : COL_LIGHT_GREY, 0xFFFF);
 
     // ── Główny obszar DRO ──
@@ -61,13 +61,13 @@ static void draw_dro(void)
 
         // Wartość – maksymalnie duża
         snprintf(buf, sizeof(buf), "%+6d.%02d", zi, zd);
-        int vw = display_text_width(buf, FONT_LG);
-        display_string(SCR_W - vw - UI_PAD_X, z_y + 4, buf, FONT_LG, zc, DRO_BG);
+        int vw = display_text_width(buf, FONT_XXL);
+        display_string(SCR_W - vw - UI_PAD_X, z_y + 2, buf, FONT_XXL, zc, DRO_BG);
 
         // Jednostka + status homingu
         snprintf(buf, sizeof(buf), "mm %s", zh ? "[OK]" : "[--]");
-        display_string(SCR_W - display_text_width(buf, FONT_SM) - UI_PAD_X,
-                       z_y + FONT_LG_H + 4, buf, FONT_SM,
+        display_string(SCR_W - display_text_width(buf, FONT_MD) - UI_PAD_X,
+                       z_y + FONT_LG_H + 8, buf, FONT_MD,
                        zh ? COL_OK : COL_WARN, DRO_BG);
     }
 
@@ -86,26 +86,26 @@ static void draw_dro(void)
 
         display_string(UI_PAD_X, x_y + 4, "X", FONT_LG, xc, DRO_BG);
         snprintf(buf, sizeof(buf), "%+6d.%02d", xi, xd);
-        int vw = display_text_width(buf, FONT_LG);
-        display_string(SCR_W - vw - UI_PAD_X, x_y + 4, buf, FONT_LG, xc, DRO_BG);
+        int vw = display_text_width(buf, FONT_XXL);
+        display_string(SCR_W - vw - UI_PAD_X, x_y + 2, buf, FONT_XXL, xc, DRO_BG);
 
         snprintf(buf, sizeof(buf), "mm %s", xh ? "[OK]" : "[--]");
-        display_string(SCR_W - display_text_width(buf, FONT_SM) - UI_PAD_X,
-                       x_y + FONT_LG_H + 4, buf, FONT_SM,
+        display_string(SCR_W - display_text_width(buf, FONT_MD) - UI_PAD_X,
+                       x_y + FONT_LG_H + 8, buf, FONT_MD,
                        xh ? COL_OK : COL_WARN, DRO_BG);
     } else {
         display_string(UI_PAD_X, x_y + 4, "X: --", FONT_MD, COL_LABEL, DRO_BG);
     }
 
     // ── Stopka – podpowiedź ──
-    int ft_y = SCR_H - FONT_SM_H - 4;
+    int ft_y = SCR_H - FONT_MD_H - 4;
     if (dro_ui.dirty) {
         snprintf(buf, sizeof(buf), "Jasnosc: %d%% *", dro_ui.brightness);
     } else {
         snprintf(buf, sizeof(buf), "ENC=jasn  SW=menu  BTN1=E-STOP");
     }
-    display_fill_rect(0, ft_y - 2, SCR_W, FONT_SM_H + 6, rgb565(15, 15, 15));
-    display_string(UI_PAD_X, ft_y, buf, FONT_SM, COL_LABEL, 0xFFFF);
+    display_fill_rect(0, ft_y - 2, SCR_W, FONT_MD_H + 6, rgb565(15, 15, 15));
+    display_string(UI_PAD_X, ft_y, buf, FONT_MD, COL_LABEL, 0xFFFF);
 
     display_flush();
 }

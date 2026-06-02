@@ -33,6 +33,8 @@
 #define DISP_MODEL      0x7789
 #elif CONFIG_ST7796
 #define DISP_MODEL      0x7796
+#elif CONFIG_ILI9488
+#define DISP_MODEL      0x9488
 #else
 #error "Select display driver in menuconfig -> TFT Configuration"
 #endif
@@ -44,7 +46,7 @@
 #define DISP_BL         CONFIG_BL_GPIO
 
 // SPI clock set explicitly before spi_master_init().
-#define DISP_SPI_FREQ_HZ (15 * 1000 * 1000)
+  #define DISP_SPI_FREQ_HZ (30 * 1000 * 1000)
 
 // ------------------------------------------------------------
 //  Rozmiary fontów FONTX
@@ -102,6 +104,13 @@
 #define FONT_MN_LG_W  16
 #define FONT_MN_LG_H  32
 
+#define FONT_XL     7   // Gothic 24×48px
+#define FONT_XXL    8   // Gothic 32×64px
+#define FONT_XL_W   24
+#define FONT_XL_H   48
+#define FONT_XXL_W  32
+#define FONT_XXL_H  64
+
 // ------------------------------------------------------------
 //  Kolory RGB565 – makro biblioteki
 // ------------------------------------------------------------
@@ -121,7 +130,7 @@
 //  Globalne uchwyty
 // ------------------------------------------------------------
 extern TFT_t      g_dev;
-extern FontxFile  g_font[7][2];
+extern FontxFile  g_font[9][2]; // 0-2: Gothic, 3-5: Mincho, 6: Latin, 7-8: XL/XXL
 
 // ------------------------------------------------------------
 //  API publiczne

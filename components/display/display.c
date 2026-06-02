@@ -15,9 +15,9 @@
 static const char *TAG = "DISPLAY";
 
 TFT_t     g_dev;
-FontxFile g_font[7][2];
+FontxFile g_font[9][2];
 
-static const char *FONT_PATHS[7] = {
+static const char *FONT_PATHS[9] = {
     "/spiffs/ILGH16XB.FNT",
     "/spiffs/ILGH24XB.FNT",
     "/spiffs/ILGH32XB.FNT",
@@ -25,6 +25,8 @@ static const char *FONT_PATHS[7] = {
     "/spiffs/ILMH24XB.FNT",
     "/spiffs/ILMH32XB.FNT",
     "/spiffs/LATIN32B.FNT",
+    "/spiffs/ILGH48XB.FNT",
+    "/spiffs/ILGH64XB.FNT",
 };
 
 #define BL_LEDC_TIMER   LEDC_TIMER_0
@@ -110,7 +112,7 @@ esp_err_t display_init(void)
     lcdSetFontDirection(&g_dev, DIRECTION0);
 
     // Wczytaj fonty
-    for (int i = 0; i < 7; i++) {
+    for (int i = 0; i < 9; i++) {
         InitFontx(g_font[i], (char*)FONT_PATHS[i], "");
         uint8_t buf[FontxGlyphBufSize];
         uint8_t fw, fh;
@@ -175,10 +177,17 @@ void display_string(int x, int y, const char *s,
                     uint8_t font_size, uint16_t fg, uint16_t bg)
 {
     if (!s || !*s) return;
-    if (font_size > FONT_LATIN) font_size = FONT_SM;
+    if (font_size > FONT_XXL) font_size = FONT_SM;
+
+    // High-res scaling: SM→MD (8×16→12×24)
+    // MD and LG stay as-is (compat layer already maps scales to MD/LG)
+#if DISP_H >= 400
+    if (font_size == FONT_SM) font_size = FONT_MD;
+#endif
 
     const uint8_t font_h[] = { FONT_SM_H, FONT_MD_H, FONT_LG_H,
-                               FONT_MN_SM_H, FONT_MN_MD_H, FONT_MN_LG_H, 32 };
+                               FONT_MN_SM_H, FONT_MN_MD_H, FONT_MN_LG_H, 32,
+                               FONT_XL_H, FONT_XXL_H };
     if (x < 0 || y < 0 || x >= DISP_W || y >= DISP_H) return;
 
     // The ili9340 driver treats y as the glyph bottom. The public display API
@@ -210,8 +219,12 @@ void display_brightness(uint8_t pct)
 int display_text_width(const char *s, uint8_t font_size)
 {
     const int w[] = {FONT_SM_W, FONT_MD_W, FONT_LG_W,
-                     FONT_MN_SM_W, FONT_MN_MD_W, FONT_MN_LG_W, 8};
-    if (!s || font_size > FONT_LATIN) return 0;
+                     FONT_MN_SM_W, FONT_MN_MD_W, FONT_MN_LG_W, 8,
+                     FONT_XL_W, FONT_XXL_W};
+    if (!s || font_size > FONT_XXL) return 0;
+#if DISP_H >= 400
+    if (font_size == FONT_SM) font_size = FONT_MD;
+#endif
     return strlen(s) * w[font_size];
 }
 

@@ -32,9 +32,20 @@
 
 static inline uint8_t _scale_to_font(uint8_t scale)
 {
+#if DISP_H >= 400
+    // High-res (480×320+): large fonts
+    if (scale >= 3) return FONT_XXL;  // 32×64
+    if (scale >= 2) return FONT_XL;   // 24×48
+    return FONT_LG;                    // 16×32
+#elif DISP_H >= 240
     if (scale >= 3) return FONT_LG;
     if (scale == 2) return FONT_MD;
     return FONT_SM;
+#else
+    if (scale >= 3) return FONT_LG;
+    if (scale == 2) return FONT_MD;
+    return FONT_SM;
+#endif
 }
 
 static inline void display_fill(uint16_t c)

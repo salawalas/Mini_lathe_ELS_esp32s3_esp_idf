@@ -160,6 +160,7 @@ static void numpad_accept(void)
     np.result = val;
     np.done   = true;
     np.active = false;
+    ui_menu_goto(SCREEN_MAIN);
 }
 
 static void numpad_cancel(void)
@@ -167,6 +168,7 @@ static void numpad_cancel(void)
     np.result = 0.0f;
     np.done   = false;
     np.active = false;
+    ui_menu_goto(SCREEN_MAIN);
 }
 
 // ── Handle (called from ui_task) ───────────────────────────

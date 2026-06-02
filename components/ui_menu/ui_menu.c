@@ -47,8 +47,8 @@ static const char *TAG = "UI";
 #define ROW_H (SCR_H / 8)
 #define UI_PAD_X (SCR_W / 40)
 #define UI_VALUE_X (SCR_W * 2 / 5)
-#define COL_RIGHT_1 (SCR_W - SCR_W / 10)
-#define COL_RIGHT_2 (SCR_W - SCR_W / 20)
+#define COL_RIGHT_1 (SCR_W - 56)
+#define COL_RIGHT_2 (SCR_W - 44)
 #define UI_ROW_GAP (SCR_H / 128)
 
 #define CONTENT_Y (HEADER_H + 2)
@@ -206,6 +206,7 @@ static void draw_footer(void)
         "ENC=val BTN3=zapisz",       // SCREEN_SETTINGS_LATHE
         "SW=wybierz BTN2=wroc",      // SCREEN_SETTINGS_SYSTEM
         "Dotknij krzyzyk BTN2=wroc", // SCREEN_TOUCH_CALIB
+        "ENC=+/- SW=OK BTN2=back",   // SCREEN_NUMPAD
     };
     if (ui.uptime_ms < ui.notify_until_ms && ui.notify_msg[0])
     {
@@ -267,7 +268,7 @@ static void draw_main(void)
 // 4a: Kierunek wrzeciona + zasilanie
     const char *dir_arr = (sp.dir == SPINDLE_DIR_FWD) ? ">" : "<";
     snprintf(buf, sizeof(buf), "%s%s", dir_arr, sp.power_enabled ? "ON" : "OF");
-    display_draw_string(SCR_W - 28, y, buf, sp.power_enabled ? COL_OK : COL_LABEL, COLOR_BLACK, 1);
+    display_draw_string(SCR_W - 42, y, buf, sp.power_enabled ? COL_OK : COL_LABEL, COLOR_BLACK, 1);
     y += ROW_H;
 
     // Pozycja Z + status homingu
@@ -276,7 +277,7 @@ static void draw_main(void)
     snprintf(buf, sizeof(buf), "%4d.%02d mm", pi, pd);
     display_draw_string(UI_PAD_X + 14, y, buf, limits_axis_homed(AXIS_Z) ? COL_VAL : COL_WARN, COLOR_BLACK, 1);
     const char *fs[] = {"IDL", "RUN", "ACC", "DEC", "ERR"};
-    display_draw_string(SCR_W - 28, y, fs[stepper_get_state()],
+    display_draw_string(SCR_W - 42, y, fs[stepper_get_state()],
                         (stepper_get_state() == STEPPER_STATE_IDLE) ? COL_LABEL : COL_WARN, COLOR_BLACK, 1);
     // Znacznik homingu
     snprintf(buf, sizeof(buf), "%s", limits_axis_homed(AXIS_Z) ? "[OK]" : "[--]");
@@ -325,7 +326,7 @@ static void draw_main(void)
     display_draw_string(4, y, buf, sdcard_is_mounted() ? COL_OK : COL_LABEL, COLOR_BLACK, 1);
     uint32_t free_k = esp_get_free_heap_size() / 1024;
     snprintf(buf, sizeof(buf), "%luK", free_k);
-    display_draw_string(SCR_W - 28, y, buf, COLOR_LIGHT_GREY, COLOR_BLACK, 1);
+    display_draw_string(SCR_W - 42, y, buf, COLOR_LIGHT_GREY, COLOR_BLACK, 1);
 
     draw_footer();
     display_flush();
@@ -436,6 +437,7 @@ static void draw_menu(void)
 
 
 static void backlight_screen_enter(void); // forward decl
+static void numpad_screen_enter(void);    // forward decl
 static void handle_menu(encoder_event_t evt)
 {
     if (ui_estop_handler(evt)) return;
@@ -450,6 +452,7 @@ static void handle_menu(encoder_event_t evt)
     case ENCODER_EVT_BTN3_PRESS: {
         screen_id_t dst = MENU_ORDER[ui.menu_sel];
         if (dst == SCREEN_BACKLIGHT) backlight_screen_enter();
+        if (dst == SCREEN_NUMPAD) numpad_screen_enter();
         ui_menu_goto(dst);
         break;
     }
@@ -969,6 +972,11 @@ static void handle_settings_system(encoder_event_t evt)
 
 #include "screen_numpad.inc"
 
+// ------------------------------------------------------------
+static void numpad_screen_enter(void)
+{
+    numpad_open("Wartosc", 0.0f, -9999.0f, 9999.0f, 1.0f, "");
+}
 // ------------------------------------------------------------
 //  Tablica ekranów
 // ------------------------------------------------------------
