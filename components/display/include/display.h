@@ -66,7 +66,7 @@
 #define FONT_LG_H   32
 
 // ── Adaptacyjne rozmiary fontów – zależne od rozdzielczości ──
-#if DISP_H >= 400      // 480×320, 800×480 itp.
+#if DISP_W >= 400      // 480×320 landscape, 800×480 itp.
   #define FONT_LABEL      FONT_MD
   #define FONT_LABEL_W    FONT_MD_W
   #define FONT_LABEL_H    FONT_MD_H

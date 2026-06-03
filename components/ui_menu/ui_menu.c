@@ -48,15 +48,23 @@ static const char *TAG = "UI";
 #define UI_PAD_X (SCR_W / 40)
 #define UI_VALUE_X (SCR_W * 2 / 5)
 #define COL_RIGHT_1 (SCR_W - 56)
-#define COL_RIGHT_2 (SCR_W - 44)
+#if DISP_W >= 400
+// 480-szeroki: scale=1 renderuje FONT_MD (12×24) — wyśrodkowanie i margines pod szerszy font
+#define COL_RIGHT_2      (SCR_W - 4*FONT_MD_W - 4)   // 480-48-4=428, 4 znaki "[OK]"
+#define UI_TEXT_Y        ((ROW_H - FONT_MD_H) / 2)    // (40-24)/2=8
+#define UI_HEADER_TEXT_Y ((HEADER_H - FONT_MD_H) / 2) // (32-24)/2=4
+#define UI_FOOTER_TEXT_Y ((FOOTER_H - FONT_MD_H) / 2) // (32-24)/2=4
+#else
+#define COL_RIGHT_2      (SCR_W - 44)
+#define UI_TEXT_Y        ((ROW_H - FONT_SM_H) / 2)
+#define UI_HEADER_TEXT_Y ((HEADER_H - FONT_SM_H) / 2)
+#define UI_FOOTER_TEXT_Y ((FOOTER_H - FONT_SM_H) / 2)
+#endif
 #define UI_ROW_GAP (SCR_H / 128)
 
 #define CONTENT_Y (HEADER_H + 2)
 #define CONTENT_H (SCR_H - HEADER_H - FOOTER_H - 4)
-#define FOOTER_Y (SCR_H - FOOTER_H)
-#define UI_TEXT_Y ((ROW_H - FONT_SM_H) / 2)
-#define UI_HEADER_TEXT_Y ((HEADER_H - FONT_SM_H) / 2)
-#define UI_FOOTER_TEXT_Y ((FOOTER_H - FONT_SM_H) / 2)
+#define FOOTER_Y  (SCR_H - FOOTER_H)
 
 // Kolory motywu (rgb565)
 #define COL_HDR_MAIN rgb565(0, 80, 160)
@@ -479,7 +487,7 @@ static void draw_jog(void)
     display_draw_string(UI_PAD_X, y, "Z:", COL_LABEL, COLOR_BLACK, 1);
     snprintf(buf, sizeof(buf), "%5d.%02d mm", pi, pd);
     display_draw_string(UI_PAD_X + 14, y, buf, COL_VAL, COLOR_BLACK, 2);
-    y += 20;
+    y += FONT_LG_H + 4;   // FONT_LG=32px (scale=2 na 480×320) + 4px odstęp
     display_draw_hline(4, y, SCR_W - 8, COLOR_LIGHT_GREY);
     y += 5;
     snprintf(buf, sizeof(buf), "Krok: %s kr", JOG_STEPS_LBL[ui.jog_step_idx]);
@@ -638,7 +646,7 @@ static void draw_spindle(void)
     snprintf(buf, sizeof(buf), "%3d RPM", sp.rpm_actual);
     display_draw_string(UI_PAD_X, y, "Actual:", COL_LABEL, COLOR_BLACK, 1);
     display_draw_string(UI_PAD_X + 48, y, buf, sp.at_speed ? COL_OK : COL_WARN, COLOR_BLACK, 2);
-    y += 20;
+    y += FONT_LG_H + 4;   // FONT_LG=32px (scale=2 na 480×320) + 4px odstęp
     display_draw_hline(4, y, SCR_W - 8, COLOR_LIGHT_GREY);
     y += 5;
     snprintf(buf, sizeof(buf), "%4d", ui.spindle_rpm);

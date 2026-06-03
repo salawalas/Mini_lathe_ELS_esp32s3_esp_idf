@@ -33,9 +33,14 @@
 static inline uint8_t _scale_to_font(uint8_t scale)
 {
 #if DISP_H >= 400
-    // High-res (480×320+): large fonts
+    // Bardzo wysoka rozdzielczość (800×480+)
     if (scale >= 2) return FONT_XXL;  // 40×64
     return FONT_XL;                    // 24×48
+#elif DISP_W >= 400
+    // 480-szeroki (480×320 landscape): czytelne fonty, mieszczące się w ROW_H=40px
+    if (scale >= 3) return FONT_XL;   // 24×48
+    if (scale >= 2) return FONT_LG;   // 16×32
+    return FONT_MD;                    // 12×24
 #elif DISP_H >= 240
     if (scale >= 3) return FONT_LG;
     if (scale == 2) return FONT_MD;

@@ -182,10 +182,14 @@ void display_string(int x, int y, const char *s,
     if (!s || !*s) return;
     if (font_size > FONT_XXL) font_size = FONT_SM;
 
-    // High-res scaling: SM→XL (8×16→24×48), MD→XXL (12×24→40×64)
+    // Auto-scaling podług szerokości: wyrównuje fonty do rzeczywistej rozdzielczości
 #if DISP_H >= 400
+    // Bardzo wysoka rozdzielczość: SM→XL, MD→XXL
     if (font_size == FONT_SM) font_size = FONT_XL;
     else if (font_size == FONT_MD) font_size = FONT_XXL;
+#elif DISP_W >= 400
+    // 480-szeroki (480×320): SM→MD (8×16 → 12×24), reszta bez zmian
+    if (font_size == FONT_SM) font_size = FONT_MD;
 #endif
 
     const uint8_t font_h[] = { FONT_SM_H, FONT_MD_H, FONT_LG_H,
@@ -228,6 +232,8 @@ int display_text_width(const char *s, uint8_t font_size)
 #if DISP_H >= 400
     if (font_size == FONT_SM) font_size = FONT_XL;
     else if (font_size == FONT_MD) font_size = FONT_XXL;
+#elif DISP_W >= 400
+    if (font_size == FONT_SM) font_size = FONT_MD;
 #endif
     return strlen(s) * w[font_size];
 }
