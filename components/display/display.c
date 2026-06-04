@@ -144,6 +144,17 @@ void display_flush(void)
     lcdDrawFinish(&g_dev);
 }
 
+void display_flush_rect(int x, int y, int w, int h)
+{
+    if (w <= 0 || h <= 0) return;
+    if (x < 0) { w += x; x = 0; }
+    if (y < 0) { h += y; y = 0; }
+    if (x >= DISP_W || y >= DISP_H || w <= 0 || h <= 0) return;
+    if (x + w > DISP_W) w = DISP_W - x;
+    if (y + h > DISP_H) h = DISP_H - y;
+    lcdDrawFinishRect(&g_dev, (uint16_t)x, (uint16_t)y, (uint16_t)w, (uint16_t)h);
+}
+
 void display_clear(uint16_t c)
 {
     lcdFillScreen(&g_dev, c);
@@ -202,9 +213,33 @@ void display_string(int x, int y, const char *s,
     int baseline_y = y + font_h[font_size] - 1;
     if (baseline_y >= DISP_H) baseline_y = DISP_H - 1;
 
-    if (bg != 0xFFFF) lcdSetFontFill(&g_dev, bg);
-    else              lcdUnsetFontFill(&g_dev);
-    lcdDrawString(&g_dev, g_font[font_size], x, baseline_y, (uint8_t*)s, fg);
+    if (font_size == FONT_XXL) {
+        // FONT_XXL (40×64): renderuj znak po znaku.
+        // lcdDrawString używa pw z pliku fontu do przesunięcia x – jeśli pw
+        // odbiega od FONT_XXL_W, kolejne znaki zachodzą na siebie lub mają
+        // przerwę.  Tutaj wymuś dokładnie FONT_XXL_W (40 px) na znak i wyczyść
+        // każdą komórkę osobno, zanim rysunek glifu ją nadpisze.
+        lcdUnsetFontFill(&g_dev);          // fill robimy ręcznie poniżej
+        int cx = x;
+        for (const uint8_t *p = (const uint8_t *)s; *p && cx < DISP_W; p++) {
+            if (bg != 0xFFFF) {
+                // Jawne czyszczenie komórki 40×64 tłem
+                lcdDrawFillRect(&g_dev,
+                                cx,
+                                baseline_y - (FONT_XXL_H - 1),
+                                cx + FONT_XXL_W - 1,
+                                baseline_y,
+                                bg);
+            }
+            lcdDrawChar(&g_dev, g_font[FONT_XXL], cx, baseline_y,
+                        (uint8_t)*p, fg);
+            cx += FONT_XXL_W;              // wymuś 40 px niezależnie od pw
+        }
+    } else {
+        if (bg != 0xFFFF) lcdSetFontFill(&g_dev, bg);
+        else              lcdUnsetFontFill(&g_dev);
+        lcdDrawString(&g_dev, g_font[font_size], x, baseline_y, (uint8_t*)s, fg);
+    }
     lcdUnsetFontFill(&g_dev);
 }
 

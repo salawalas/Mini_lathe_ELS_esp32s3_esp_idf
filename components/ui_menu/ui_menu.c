@@ -1093,6 +1093,7 @@ void ui_menu_goto(screen_id_t screen)
         return;
     ui.previous = ui.current;
     ui.current = screen;
+    if (screen == SCREEN_DRO) dro_screen_invalidate();
     ui.needs_redraw = true;
     display_fill(COLOR_BLACK);
 }

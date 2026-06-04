@@ -2035,3 +2035,65 @@ void lcdDrawFinish(TFT_t *dev)
 	} // endif 0x9225
 	return;
 }
+
+// Draw a rectangular part of the frame buffer
+void lcdDrawFinishRect(TFT_t *dev, uint16_t x, uint16_t y, uint16_t w, uint16_t h)
+{
+	if (dev->_use_frame_buffer == false)
+		return;
+	if (w == 0 || h == 0 || x >= dev->_width || y >= dev->_height)
+		return;
+	if (x + w > dev->_width)
+		w = dev->_width - x;
+	if (y + h > dev->_height)
+		h = dev->_height - y;
+
+	uint16_t _x1 = dev->_offsetx + x;
+	uint16_t _x2 = _x1 + w - 1;
+	uint16_t _y1 = dev->_offsety + y;
+	uint16_t _y2 = _y1 + h - 1;
+
+	if (dev->_model == 0x9340 || dev->_model == 0x9341 || dev->_model == 0x7789 || dev->_model == 0x7796 || dev->_model == 0x9488)
+	{
+		spi_master_write_comm_byte(dev, 0x2A); // set column(x) address
+		spi_master_write_addr(dev, _x1, _x2);
+		spi_master_write_comm_byte(dev, 0x2B); // set Page(y) address
+		spi_master_write_addr(dev, _y1, _y2);
+		spi_master_write_comm_byte(dev, 0x2C); // Memory Write
+
+		for (uint16_t row = 0; row < h; row++)
+		{
+			uint16_t *image = &dev->_frame_buffer[(y + row) * dev->_width + x];
+			spi_master_write_colors(dev, image, w);
+		}
+	}
+
+	if (dev->_model == 0x7735)
+	{
+		spi_master_write_comm_byte(dev, 0x2A); // set column(x) address
+		spi_master_write_data_word(dev, _x1);
+		spi_master_write_data_word(dev, _x2);
+		spi_master_write_comm_byte(dev, 0x2B); // set Page(y) address
+		spi_master_write_data_word(dev, _y1);
+		spi_master_write_data_word(dev, _y2);
+		spi_master_write_comm_byte(dev, 0x2C); // Memory Write
+
+		for (uint16_t row = 0; row < h; row++)
+		{
+			uint16_t *image = &dev->_frame_buffer[(y + row) * dev->_width + x];
+			spi_master_write_colors(dev, image, w);
+		}
+	}
+
+	if (dev->_model == 0x9225)
+	{
+		for (uint16_t row = 0; row < h; row++)
+		{
+			lcdWriteRegisterByte(dev, 0x20, _x1);          // set Horizontal address
+			lcdWriteRegisterByte(dev, 0x21, _y1 + row);    // set Vertical address
+			spi_master_write_comm_byte(dev, 0x22);         // Memory Write
+			uint16_t *image = &dev->_frame_buffer[(y + row) * dev->_width + x];
+			spi_master_write_colors(dev, image, w);
+		}
+	}
+}

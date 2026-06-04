@@ -111,6 +111,7 @@ void lcdSetScrollArea(TFT_t * dev, uint16_t tfa, uint16_t vsa, uint16_t bfa);
 void lcdResetScrollArea(TFT_t * dev, uint16_t vsa);
 void lcdScroll(TFT_t * dev, uint16_t vsp);
 void lcdDrawFinish(TFT_t *dev);
+void lcdDrawFinishRect(TFT_t *dev, uint16_t x, uint16_t y, uint16_t w, uint16_t h);
 int xptGetit(TFT_t * dev, int cmd);
 bool touch_getxy(TFT_t *dev, int *xp, int *yp);
 #endif /* MAIN_ILI9340_H_ */

@@ -81,12 +81,16 @@ def generate_fontx2(
             font = ImageFont.load_default()
     
     num_chars = end_code - start_code + 1
-    bytes_per_glyph = (glyph_w * glyph_h + 7) // 8
+    row_stride = (glyph_w + 7) // 8
+    bytes_per_glyph = row_stride * glyph_h
     
     # Build header
     name_bytes = name.encode("ascii", errors="replace")[:8].ljust(8, b" ")
     header = b"FONTX2" + name_bytes
-    header += struct.pack("<BBHH", glyph_w, glyph_h, 0, 0)  # 0 blocks = ANK font
+    # Local fontx.c expects ANK glyph data at offset 17:
+    #   6 bytes magic + 8 bytes name + width + height + code flag.
+    # Do not append a block-count byte for ANK fonts.
+    header += struct.pack("<BBB", glyph_w, glyph_h, 0)
     
     # No block table for ANK fonts (block count = 0)
     # Glyph data starts right after header
@@ -121,8 +125,8 @@ def generate_fontx2(
         for py in range(glyph_h):
             for px in range(glyph_w):
                 if img.getpixel((px, py)):
-                    byte_idx = (py * glyph_w + px) // 8
-                    bit_idx = 7 - ((py * glyph_w + px) % 8)
+                    byte_idx = py * row_stride + (px // 8)
+                    bit_idx = 7 - (px % 8)
                     bitmap[byte_idx] |= (1 << bit_idx)
         
         glyphs_data.extend(bitmap)

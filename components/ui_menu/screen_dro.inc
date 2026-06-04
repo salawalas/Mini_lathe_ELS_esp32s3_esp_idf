@@ -1,20 +1,10 @@
 // ============================================================
-//  screen_dro.inc  –  Ekran DRO (Digital Read Out)
+//  screen_dro.inc  -  Ekran DRO (Digital Read Out)
 //  Dołączany do ui_menu.c przez #include
 //
-//  Zoptymalizowany dla 480×320 ILI9488 (landscape)
-//  ┌──────────────────────────────────── 480px ──────────────────────────────────────┐
-//  │  STATUS BAR  h=38  │ RPM: 123 FWD │  FONT_LG (16×32)  kolorowe tło             │
-//  ├─────────────────────────────────────────────────────────────────────────────────┤
-//  │  Z  (FONT_XL 24×48)        +  123.45  (FONT_XXL 40×64, prawostronnie)   h=123  │
-//  │                             mm  [OK]   (FONT_MD 12×24, prawostronnie)           │
-//  ├─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ separator ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ h=3  ─ ─┤
-//  │  X  (FONT_XL 24×48)        +   45.23  (FONT_XXL 40×64, prawostronnie)   h=123  │
-//  │                             mm  [--]   (FONT_MD 12×24, prawostronnie)           │
-//  ├─────────────────────────────────────────────────────────────────────────────────┤
-//  │  STOPKA  h=30  │ ENC=jasn  SW=menu  BTN3=0Z  BTN3>>>=0X │  FONT_MD             │
-//  └─────────────────────────────────────────────────────────────────────────────────┘
-//  Łącznie: 38+1+123+3+123+2+30 = 320px ✓
+//  ILI9488 po SPI 18-bit jest kosztowny przy pełnym odświeżaniu:
+//  480×320×3 B = ~460 kB na klatkę.  Ten ekran rysuje pełny layout
+//  tylko przy wejściu, a później wysyła do TFT wyłącznie zmienione pola.
 // ============================================================
 
 #define DRO_BG        COLOR_BLACK
@@ -33,130 +23,246 @@
 #define DRO_FT_Y    (SCR_H - DRO_FT_H)         // 290
 
 // Pionowe odstępy wewnątrz wiersza osi
-#define DRO_VAL_PAD  8     // od góry wiersza do górnej krawędzi FONT_XXL
-#define DRO_LBL_X   12     // x etykiety Z / X
-#define DRO_VAL_MAR 10     // prawy margines wartości i jednostki
+#define DRO_VAL_PAD  8
+#define DRO_LBL_X   12
+#define DRO_VAL_MAR 10
+
+#define DRO_VAL_X      (DRO_LBL_X + DRO_LABEL_W + 8)
+#define DRO_VAL_W      (SCR_W - DRO_VAL_X - DRO_VAL_MAR)
+#define DRO_UNIT_W     (8 * FONT_MD_W)
+#define DRO_UNIT_X     (SCR_W - DRO_UNIT_W - DRO_VAL_MAR)
+#define DRO_LABEL_W    (FONT_XL_W + 8)
+
+typedef struct {
+    char status[24];
+    char z_val[24];
+    char z_unit[16];
+    char x_val[24];
+    char x_unit[16];
+    char footer[56];
+    uint16_t status_bg;
+    uint16_t status_fg;
+    uint16_t z_color;
+    uint16_t z_unit_color;
+    uint16_t x_color;
+    uint16_t x_unit_color;
+    bool x_available;
+} dro_cache_t;
 
 static struct {
-    uint8_t brightness;
-    bool    dirty;
-} dro_ui = { .brightness = 90, .dirty = false };
+    uint8_t     brightness;
+    bool        dirty;
+    bool        layout_valid;
+    dro_cache_t cache;
+} dro_ui = { .brightness = 90, .dirty = false, .layout_valid = false };
+
+static void dro_screen_invalidate(void)
+{
+    dro_ui.layout_valid = false;
+    memset(&dro_ui.cache, 0, sizeof(dro_ui.cache));
+}
+
+static bool dro_text_changed(char *dst, size_t dst_sz, const char *src)
+{
+    if (strncmp(dst, src, dst_sz) == 0) return false;
+    strncpy(dst, src, dst_sz - 1);
+    dst[dst_sz - 1] = '\0';
+    return true;
+}
+
+static void dro_draw_text_rect(int x, int y, int w, int h,
+                               const char *text, uint8_t font,
+                               uint16_t fg, uint16_t bg,
+                               bool right_align, bool do_flush)
+{
+    display_fill_rect(x, y, w, h, bg);
+    int tx = x;
+    if (right_align) {
+        int tw = display_text_width(text, font);
+        tx = x + w - tw;
+        if (tx < x) tx = x;
+    }
+    display_string(tx, y, text, font, fg, bg);
+    if (do_flush) display_flush_rect(x, y, w, h);
+}
+
+static void dro_format_value(float mm_val, char *out, size_t out_sz)
+{
+    int i = (int)mm_val;
+    int f = (int)(fabsf(mm_val - (float)i) * 100.0f);
+    snprintf(out, out_sz, "%+6d.%02d", i, f);
+}
+
+static void dro_draw_status(const char *text, uint16_t fg, uint16_t bg,
+                            bool force, bool do_flush)
+{
+    bool changed = force;
+    changed |= dro_text_changed(dro_ui.cache.status,
+                                sizeof(dro_ui.cache.status), text);
+    changed |= (dro_ui.cache.status_fg != fg);
+    changed |= (dro_ui.cache.status_bg != bg);
+    if (!changed) return;
+
+    dro_ui.cache.status_fg = fg;
+    dro_ui.cache.status_bg = bg;
+    display_fill_rect(0, 0, SCR_W, DRO_SB_H, bg);
+    display_hline(0, DRO_SB_H, SCR_W, rgb565(55, 55, 55));
+    int tw = display_text_width(text, FONT_LG);
+    int ty = (DRO_SB_H - FONT_LG_H) / 2;
+    display_string((SCR_W - tw) / 2, ty, text, FONT_LG, fg, bg);
+    if (do_flush) display_flush_rect(0, 0, SCR_W, DRO_SB_H + 1);
+}
+
+static void dro_draw_footer(const char *text, bool force, bool do_flush)
+{
+    bool changed = force;
+    changed |= dro_text_changed(dro_ui.cache.footer,
+                                sizeof(dro_ui.cache.footer), text);
+    if (!changed) return;
+
+    display_fill_rect(0, DRO_FT_Y, SCR_W, DRO_FT_H, rgb565(14, 14, 14));
+    display_hline(0, DRO_FT_Y, SCR_W, rgb565(48, 48, 48));
+    int ty = DRO_FT_Y + (DRO_FT_H - FONT_MD_H) / 2;
+    display_string(UI_PAD_X, ty, text, FONT_MD, COL_LABEL, rgb565(14, 14, 14));
+    if (do_flush) display_flush_rect(0, DRO_FT_Y, SCR_W, DRO_FT_H);
+}
+
+static void dro_draw_axis_value(int zone_y, const char *label, const char *value,
+                                const char *unit, bool is_x_axis,
+                                uint16_t val_color, uint16_t unit_color,
+                                bool force, bool do_flush)
+{
+    dro_cache_t *c = &dro_ui.cache;
+    int val_y = zone_y + DRO_VAL_PAD;
+    int lbl_y = val_y + (FONT_XXL_H - FONT_XL_H) / 2;
+    int unit_y = val_y + FONT_XXL_H + 4;
+
+    char *cached_val = is_x_axis ? c->x_val : c->z_val;
+    char *cached_unit = is_x_axis ? c->x_unit : c->z_unit;
+    uint16_t *cached_color = is_x_axis ? &c->x_color : &c->z_color;
+    uint16_t *cached_unit_color = is_x_axis ? &c->x_unit_color : &c->z_unit_color;
+    size_t val_sz = is_x_axis ? sizeof(c->x_val) : sizeof(c->z_val);
+    size_t unit_sz = is_x_axis ? sizeof(c->x_unit) : sizeof(c->z_unit);
+
+    bool row_force = force || (is_x_axis && !c->x_available);
+    if (row_force) {
+        display_fill_rect(0, zone_y, SCR_W, DRO_ROW_H, DRO_BG);
+    }
+
+    if (row_force || *cached_color != val_color) {
+        display_fill_rect(DRO_LBL_X, lbl_y, DRO_LABEL_W, FONT_XL_H, DRO_BG);
+        display_string(DRO_LBL_X, lbl_y, label, FONT_XL, val_color, DRO_BG);
+        if (do_flush && !row_force)
+            display_flush_rect(DRO_LBL_X, lbl_y, DRO_LABEL_W, FONT_XL_H);
+    }
+
+    bool value_changed = row_force;
+    value_changed |= dro_text_changed(cached_val, val_sz, value);
+    value_changed |= (*cached_color != val_color);
+    if (value_changed) {
+        dro_draw_text_rect(DRO_VAL_X, val_y, DRO_VAL_W, FONT_XXL_H,
+                           value, FONT_XXL, val_color, DRO_BG, true,
+                           do_flush && !row_force);
+    }
+
+    bool unit_changed = row_force;
+    unit_changed |= dro_text_changed(cached_unit, unit_sz, unit);
+    unit_changed |= (*cached_unit_color != unit_color);
+    if (unit_changed) {
+        dro_draw_text_rect(DRO_UNIT_X, unit_y, DRO_UNIT_W, FONT_MD_H,
+                           unit, FONT_MD, unit_color, DRO_BG, true,
+                           do_flush && !row_force);
+    }
+
+    *cached_color = val_color;
+    *cached_unit_color = unit_color;
+    if (is_x_axis) c->x_available = true;
+
+    if (do_flush && row_force) {
+        display_flush_rect(0, zone_y, SCR_W, DRO_ROW_H);
+    }
+}
+
+static void dro_draw_x_na(bool force, bool do_flush)
+{
+    bool changed = force || dro_ui.cache.x_available;
+    if (!changed) return;
+
+    display_fill_rect(0, DRO_X_Y, SCR_W, DRO_ROW_H, DRO_BG);
+    int ny = DRO_X_Y + (DRO_ROW_H - FONT_XL_H) / 2;
+    display_string(DRO_LBL_X, ny, "X: N/A", FONT_XL, COL_LABEL, DRO_BG);
+    dro_ui.cache.x_available = false;
+    dro_ui.cache.x_val[0] = '\0';
+    dro_ui.cache.x_unit[0] = '\0';
+    if (do_flush) display_flush_rect(0, DRO_X_Y, SCR_W, DRO_ROW_H);
+}
 
 // ── draw_dro ────────────────────────────────────────────────
 static void draw_dro(void)
 {
-    display_fill_rect(0, 0, SCR_W, SCR_H, DRO_BG);
-
     spindle_status_t sp;
     spindle_get_status(&sp);
 
-    // ── Pasek statusu (RPM / E-STOP / bazowanie) ────────────
-    uint16_t sb_bg = sp.estop_active ? rgb565(185,  0,   0)
-                   : (!g_homed)      ? rgb565(130, 60,   0)
-                   :                    rgb565(  0, 38,  78);
-    display_fill_rect(0, 0, SCR_W, DRO_SB_H, sb_bg);
-    display_hline(0, DRO_SB_H, SCR_W, rgb565(55, 55, 55));
+    bool force = !dro_ui.layout_valid;
+    if (force) {
+        display_fill_rect(0, 0, SCR_W, SCR_H, DRO_BG);
+        display_fill_rect(40, DRO_SEP_Y,     SCR_W - 80, 1, rgb565(65, 65, 65));
+        display_fill_rect(40, DRO_SEP_Y + 1, SCR_W - 80, 1, rgb565(28, 28, 28));
+    }
 
-    char buf[24];
+    char status[24];
     if (sp.estop_active) {
-        snprintf(buf, sizeof(buf), "!!!  E-STOP  !!!");
+        snprintf(status, sizeof(status), "!!!  E-STOP  !!!");
     } else if (sp.state == SPINDLE_STATE_RUNNING) {
-        snprintf(buf, sizeof(buf), "RPM: %d  %s",
+        snprintf(status, sizeof(status), "RPM: %d  %s",
                  sp.rpm_actual,
                  (sp.dir == SPINDLE_DIR_FWD) ? "FWD" : "REV");
     } else {
-        snprintf(buf, sizeof(buf), g_homed ? "STOP  |  HOMED" : "NIE BAZOWANO");
-    }
-    {
-        // FONT_LG (16×32) — mieści się w SB_H=38 z 3px marginesem góra/dół
-        int tw = display_text_width(buf, FONT_LG);
-        int ty = (DRO_SB_H - FONT_LG_H) / 2;
-        uint16_t tc = sp.estop_active ? COL_WHITE
-                    : (!g_homed)      ? COL_WARN
-                    :                   COL_LIGHT_GREY;
-        display_string((SCR_W - tw) / 2, ty, buf, FONT_LG, tc, sb_bg);
+        snprintf(status, sizeof(status), g_homed ? "STOP  |  HOMED" : "NIE BAZOWANO");
     }
 
-    // ── Makro do rysowania jednej osi ───────────────────────
-    // Rysuje: etykietę (FONT_XL), wartość (FONT_XXL), jednostkę+status (FONT_MD)
-    // zone_y: absolutna y górna krawędź strefy osi
-#define DRAW_AXIS(zone_y, label_char, mm_val, is_homed, val_color)          \
-    do {                                                                      \
-        int _val_y = (zone_y) + DRO_VAL_PAD;                                 \
-        int _lbl_y = _val_y + (FONT_XXL_H - FONT_XL_H) / 2;                 \
-        int _unt_y = _val_y + FONT_XXL_H + 4;                                \
-        uint16_t _vc = (val_color);                                           \
-        /* Etykieta Z lub X */                                                \
-        display_string(DRO_LBL_X, _lbl_y, (label_char), FONT_XL, _vc, DRO_BG); \
-        /* Wartość pozycji — format "+  123.45" (9 znaków × 40px = 360px) */ \
-        {                                                                      \
-            float _m = (mm_val);                                              \
-            int   _i = (int)_m;                                               \
-            int   _f = (int)(fabsf(_m - (float)_i) * 100.0f);                \
-            snprintf(buf, sizeof(buf), "%+6d.%02d", _i, _f);                 \
-        }                                                                      \
-        {                                                                      \
-            int _vw = display_text_width(buf, FONT_XXL);                      \
-            display_string(SCR_W - _vw - DRO_VAL_MAR, _val_y,                \
-                           buf, FONT_XXL, _vc, DRO_BG);                       \
-        }                                                                      \
-        /* Jednostka + homing status */                                        \
-        snprintf(buf, sizeof(buf), "mm  %s", (is_homed) ? "[OK]" : "[--]");  \
-        {                                                                      \
-            int _uw = display_text_width(buf, FONT_MD);                       \
-            display_string(SCR_W - _uw - DRO_VAL_MAR, _unt_y,                \
-                           buf, FONT_MD,                                       \
-                           (is_homed) ? COL_OK : COL_WARN, DRO_BG);           \
-        }                                                                      \
-    } while (0)
+    uint16_t sb_bg = sp.estop_active ? rgb565(185,  0,   0)
+                   : (!g_homed)      ? rgb565(130, 60,   0)
+                   :                    rgb565(  0, 38,  78);
+    uint16_t sb_fg = sp.estop_active ? COL_WHITE
+                   : (!g_homed)      ? COL_WARN
+                   :                   COL_LIGHT_GREY;
+    dro_draw_status(status, sb_fg, sb_bg, force, !force);
 
-    // ── Oś Z ────────────────────────────────────────────────
-    {
-        bool zh = limits_axis_homed(AXIS_Z);
-        DRAW_AXIS(DRO_Z_Y,
-                  "Z",
-                  stepper_get_position_mm(),
-                  zh,
-                  zh ? DRO_Z_COLOR : COL_WARN);
-    }
+    char val[24];
+    char unit[16];
+    bool zh = limits_axis_homed(AXIS_Z);
+    dro_format_value(stepper_get_position_mm(), val, sizeof(val));
+    snprintf(unit, sizeof(unit), "mm  %s", zh ? "[OK]" : "[--]");
+    dro_draw_axis_value(DRO_Z_Y, "Z", val, unit, false,
+                        zh ? DRO_Z_COLOR : COL_WARN,
+                        zh ? COL_OK : COL_WARN,
+                        force, !force);
 
-    // ── Separator ───────────────────────────────────────────
-    display_fill_rect(40, DRO_SEP_Y,     SCR_W - 80, 1, rgb565(65, 65, 65));
-    display_fill_rect(40, DRO_SEP_Y + 1, SCR_W - 80, 1, rgb565(28, 28, 28));
-
-    // ── Oś X ────────────────────────────────────────────────
     if (g_axis_x) {
         bool xh = limits_axis_homed(AXIS_X);
-        DRAW_AXIS(DRO_X_Y,
-                  "X",
-                  axis_get_position_mm(g_axis_x),
-                  xh,
-                  xh ? DRO_X_COLOR : COL_WARN);
+        dro_format_value(axis_get_position_mm(g_axis_x), val, sizeof(val));
+        snprintf(unit, sizeof(unit), "mm  %s", xh ? "[OK]" : "[--]");
+        dro_draw_axis_value(DRO_X_Y, "X", val, unit, true,
+                            xh ? DRO_X_COLOR : COL_WARN,
+                            xh ? COL_OK : COL_WARN,
+                            force, !force);
     } else {
-        // Brak osi X – komunikat środkiem strefy
-        int ny = DRO_X_Y + (DRO_ROW_H - FONT_XL_H) / 2;
-        display_string(DRO_LBL_X, ny, "X: N/A", FONT_XL, COL_LABEL, DRO_BG);
+        dro_draw_x_na(force, !force);
     }
 
-#undef DRAW_AXIS
-
-    // ── Stopka ──────────────────────────────────────────────
-    display_fill_rect(0, DRO_FT_Y, SCR_W, DRO_FT_H, rgb565(14, 14, 14));
-    display_hline(0, DRO_FT_Y, SCR_W, rgb565(48, 48, 48));
-
-    const char *hint;
+    char footer[56];
     if (dro_ui.dirty) {
-        snprintf(buf, sizeof(buf), "Jasnosc: %d%%", dro_ui.brightness);
-        hint = buf;
+        snprintf(footer, sizeof(footer), "Jasnosc: %d%%", dro_ui.brightness);
     } else {
-        hint = "ENC=jasn  SW=menu  BTN3=0Z  BTN3>>>=0X";
+        snprintf(footer, sizeof(footer), "ENC=jasn  SW=menu  BTN3=0Z  BTN3>>>=0X");
     }
-    {
-        int ty = DRO_FT_Y + (DRO_FT_H - FONT_MD_H) / 2;
-        display_string(UI_PAD_X, ty, hint, FONT_MD, COL_LABEL, rgb565(14, 14, 14));
-    }
+    dro_draw_footer(footer, force, !force);
 
-    display_flush();
+    if (force) {
+        display_flush();
+        dro_ui.layout_valid = true;
+    }
 }
 
 // ── handle_dro (bez zmian) ───────────────────────────────────

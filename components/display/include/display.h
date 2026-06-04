@@ -137,6 +137,7 @@ extern FontxFile  g_font[9][2]; // 0-2: Gothic, 3-5: Mincho, 6: Latin, 7-8: XL/X
 // ------------------------------------------------------------
 esp_err_t   display_init(void);
 void        display_flush(void);
+void        display_flush_rect(int x, int y, int w, int h);
 void        display_clear(uint16_t color);
 void        display_pixel(int x, int y, uint16_t color);
 void        display_hline(int x, int y, int w, uint16_t color);
