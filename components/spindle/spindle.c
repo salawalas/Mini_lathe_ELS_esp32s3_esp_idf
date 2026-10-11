@@ -8,6 +8,7 @@
 #include "driver/gpio.h"
 #include "esp_log.h"
 #include "esp_attr.h"
+#include "esp_rom_sys.h"
 
 static const char *TAG = "SPINDLE";
 

@@ -27,6 +27,7 @@
 #include "esp_log.h"
 #include "esp_attr.h"
 #include "esp_heap_caps.h"
+#include "esp_system.h"
 #include "nvs_flash.h"
 #include "nvs.h"
 #include "homing_state.h"

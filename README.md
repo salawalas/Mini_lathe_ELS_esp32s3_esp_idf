@@ -218,8 +218,8 @@ mini_lathe_v6/
 ## Funkcjonalnosci
 
 ### Sekwencja startowa
-1. **Logo** — pelnoekranowa bitmapa (jesli `/spiffs/logo.raw` istnieje) lub tekst "Mini Lathe v6.1" — 5s
-2. **Splash** — czarny ekran z niebieskim paskiem: ESP32-S3 / IDF 5.5 / 3x DM556+NEMA23 / ELS+E-STOP — 5s
+1. **Logo** — pelnoekranowa bitmapa (jesli `/spiffs/logo.raw` istnieje) lub tekst "Mini Lathe v6.3" — 5s
+2. **Splash** — czarny ekran z niebieskim paskiem: ESP32-S3 / IDF 6.1 / 3x DM556+NEMA23 / ELS+E-STOP — 5s
 3. **Ostrzezenie o braku bazowania** — migajacy czerwony ekran "! UWAGA ! Brak bazowania osi!" — 5s
 4. Inicjalizacja: NVS → enkoder → osie Z/X → wrzeciono → ELS → UI (dashboard) → SD card (nieblokujaco) → G-code parser
 

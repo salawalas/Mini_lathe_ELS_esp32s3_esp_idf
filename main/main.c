@@ -1,14 +1,15 @@
 // ============================================================
-//  main.c  –  Mini Lathe Controller v6.2.0
-//  ST7796 480×320  /  IDF 5.5  /  ESP32-S3
+//  main.c  –  Mini Lathe Controller v6.3.0
+//  ST7796 480×320  /  IDF 6.1  /  ESP32-S3
 // ============================================================
 
-#define LATHE_VERSION "6.2.0"
+#define LATHE_VERSION "6.3.0"
 #define LATHE_NAME "Mini Lathe v" LATHE_VERSION
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "esp_system.h"
+#include "esp_heap_caps.h"
 #include "nvs_flash.h"
 #include "display.h"
 #include "encoder.h"
@@ -147,10 +148,10 @@ static void show_splash_screen(void)
     }
 
     {
-        int w1 = display_text_width("ESP32-S3 / IDF 5.5", FONT_MD);
-        display_string((DISP_W - w1) / 2, SPLASH_L1, "ESP32-S3 / IDF 5.5", FONT_MD, COL_LIGHT_GREY, COL_BLACK);
+        int w1 = display_text_width("ESP32-S3 / IDF 6.1", FONT_MD);
+        display_string((DISP_W - w1) / 2, SPLASH_L1, "ESP32-S3 / IDF 6.1", FONT_MD, COL_LIGHT_GREY, COL_BLACK);
         int w2 = display_text_width("3x DM556 + NEMA23", FONT_MD);
-        display_string((DISP_W - w2) / 2, SPLASH_L2, "3x DM556 + NEMA23", FONT_MD, COL_GREEN, COL_BLACK);
+        display_string((DISP_W - w2) / 2, SPLASH_L2, "3 x DM556 + NEMA23", FONT_MD, COL_GREEN, COL_BLACK);
         int w3 = display_text_width("ELS + E-STOP", FONT_MD);
         display_string((DISP_W - w3) / 2, SPLASH_L3, "ELS + E-STOP", FONT_MD, COL_CYAN, COL_BLACK);
         int w4 = display_text_width("Inicjalizacja...", FONT_MD);
@@ -297,31 +298,42 @@ void app_main(void)
     {
         uint8_t wifi_en = 1, ble_en = 0;
         nvs_handle_t h;
-        if (nvs_open("lathe", NVS_READONLY, &h) == ESP_OK) {
-            float f = 1.0f; size_t sz = sizeof(f);
-            if (nvs_get_blob(h, "wifi_en", &f, &sz) == ESP_OK) wifi_en = (f > 0.5f) ? 1 : 0;
-            f = 0.0f; sz = sizeof(f);
-            if (nvs_get_blob(h, "ble_en", &f, &sz) == ESP_OK) ble_en = (f > 0.5f) ? 1 : 0;
+        if (nvs_open("lathe", NVS_READONLY, &h) == ESP_OK)
+        {
+            float f = 1.0f;
+            size_t sz = sizeof(f);
+            if (nvs_get_blob(h, "wifi_en", &f, &sz) == ESP_OK)
+                wifi_en = (f > 0.5f) ? 1 : 0;
+            f = 0.0f;
+            sz = sizeof(f);
+            if (nvs_get_blob(h, "ble_en", &f, &sz) == ESP_OK)
+                ble_en = (f > 0.5f) ? 1 : 0;
             nvs_close(h);
         }
 
-        if (wifi_en) {
+        if (wifi_en)
+        {
             esp_err_t ret = wifi_server_init();
             if (ret == ESP_OK)
                 ESP_LOGI(TAG, "WiFi/HTTP OK → http://192.168.4.1");
             else
                 ESP_LOGW(TAG, "WiFi init failed: %s", esp_err_to_name(ret));
-        } else {
+        }
+        else
+        {
             ESP_LOGI(TAG, "WiFi wylaczone (NVS wifi_en=0)");
         }
 
-        if (ble_en) {
+        if (ble_en)
+        {
             esp_err_t ret = ble_server_init();
             if (ret == ESP_OK)
                 ESP_LOGI(TAG, "BLE OK → 'MiniLathe'");
             else
                 ESP_LOGW(TAG, "BLE init failed: %s", esp_err_to_name(ret));
-        } else {
+        }
+        else
+        {
             ESP_LOGI(TAG, "BLE wylaczone (NVS ble_en=0)");
         }
     }
@@ -338,7 +350,8 @@ void app_main(void)
     while (1)
     {
         // Resetuj watchdoga co 2.5s (timeout=5s), loguj co 10s
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < 4; i++)
+        {
             esp_task_wdt_reset();
             vTaskDelay(pdMS_TO_TICKS(2500));
         }

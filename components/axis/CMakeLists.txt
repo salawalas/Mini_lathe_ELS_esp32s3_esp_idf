@@ -1,5 +1,5 @@
 idf_component_register(
     SRCS        "axis.c"
     INCLUDE_DIRS "include"
-    REQUIRES    driver esp_rom freertos
+    REQUIRES     esp_driver_gptimer esp_driver_gpio esp_rom freertos
 )

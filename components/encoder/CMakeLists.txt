@@ -1,5 +1,5 @@
 idf_component_register(
     SRCS        "encoder.c"
     INCLUDE_DIRS "include"
-    REQUIRES    driver esp_timer freertos
+    REQUIRES esp_driver_pcnt esp_driver_gpio esp_timer freertos
 )

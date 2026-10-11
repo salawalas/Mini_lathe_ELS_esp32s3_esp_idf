@@ -9,6 +9,7 @@
 #include "driver/ledc.h"
 #include "driver/gpio.h"
 #include "esp_log.h"
+#include "esp_heap_caps.h"
 #include <sys/stat.h>
 #include "esp_spiffs.h"
 

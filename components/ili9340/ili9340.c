@@ -8,9 +8,10 @@
 
 #include <driver/spi_master.h>
 #include <driver/gpio.h>
-#include "rom/ets_sys.h" // ets_get_cpu_frequency()
+#include "esp_rom_sys.h"
 #include "esp_log.h"
-
+#include "esp_heap_caps.h"
+#include "esp_system.h"
 #include "ili9340.h"
 
 #define TAG "ILI9340"
