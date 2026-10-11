@@ -1,4 +1,4 @@
-# Mini Lathe Controller v6.2.0
+# Mini Lathe Controller v6.3.0
 
 ## Third-party components
 
@@ -13,7 +13,7 @@ Sterownik mini-tokarki CNC z jarzmem K11-3
 i glowica podzialowa VEVOR BS4-KP100-57.
 
 **Mikrokontroler**: ESP32-S3-WROOM-1 N16R8 (DevKitC-1)
-**Framework**: ESP-IDF v5.5.1
+**Framework**: ESP-IDF v6.1
 **Display**: TFT SPI ST7735 / ILI9340 / ILI9341 / ST7789 / ST7796 (modulowa obsluga przez menuconfig)
 **Komunikacja**: USB JTAG/Serial, karta SD (FATFS przez SPI2), SPIFFS na fonty i bitmapy, **WiFi AP + Web Server**, **BLE GATT**
 
