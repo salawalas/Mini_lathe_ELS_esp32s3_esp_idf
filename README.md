@@ -49,10 +49,10 @@ Ustawienia wyswietlacza TFT mozna zmienic w `idf.py menuconfig`.
 | SCLK | **12** | OUT | TFT (SCK) + SD (CLK) - strapping, OK po boot |
 | MISO | **13** | IN | TFT (SDO) + SD (DAT0) |
 | TFT CS | **10** | OUT | |
-| SD CS | **44** | OUT | IO44 - wolny, bez konfliktu z LED (IO48) |
+| SD CS | **38** | OUT | IO44 - wolny, bez konfliktu z LED (IO48) |
 | TFT DC | **14** | OUT | Data/Command |
-| TFT RST | **9** | OUT | |
-| TFT BL | **19** | OUT | PWM LEDC do podswietlenia |
+| TFT RST | **EN/RST** | OUT | |
+| TFT BACKLIGHT_LED | **19** | OUT | PWM LEDC do podswietlenia |
 
 ### Enkoder obrotowy + przyciski
 
