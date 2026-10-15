@@ -8,8 +8,23 @@
 // ============================================================
 
 // GPIO pins for limit switches (board-specific)
+//
+// Krańcówki NC zwarte do GND; pull-up do 3,3 V (zalecane zewnętrzny 4,7 kΩ).
+// Zwarta = LOW = OK. Rozwarta lub zerwany przewód = HIGH = wyzwolona.
+//
+// Filtr zakłóceń przy KAŻDYM pinie (na płytce, przy ESP, nie przy krańcówce):
+//   3V3 ──[4,7 kΩ]──┬──[1 kΩ]── GPIO
+//                  [100 nF]
+//                    │
+//                   GND        (przewód z krańcówki NC wchodzi w punkt ┬)
+//   → odrzuca impulsy krótsze niż ok. 0,5 ms, opóźnienie wykrycia ok. 0,7 ms.
+//
+// Uwagi o pinach (ESP32-S3):
+//   GPIO3  – zwykłe GPIO, ale pin strapping (źródło JTAG)
+//   GPIO45 – pin strapping (napięcie VDD_SPI) – zewnętrzny pull-up wymagany
+//   GPIO46 – TYLKO WEJŚCIE, strapping, brak wewnętrznego pull-up – zewnętrzny wymagany
 #define LIMIT_Z_MIN_GPIO    8
-#define LIMIT_Z_MAX_GPIO    3     // INPUT-ONLY – external pull-up required
+#define LIMIT_Z_MAX_GPIO    3
 #define LIMIT_X_MIN_GPIO    46
 #define LIMIT_X_MAX_GPIO    45
 
