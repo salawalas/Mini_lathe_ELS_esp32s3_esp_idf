@@ -75,3 +75,7 @@ void axis_set_lead_mm(axis_handle_t ax, float lead_mm);
 void axis_set_max_speed_steps_s(axis_handle_t ax, uint32_t sps);
 float axis_get_steps_per_mm(axis_handle_t ax);
 
+// E-STOP: zatrzymanie obu osi, wyłączenie driverów (ENA), blokada nowych ruchów.
+void axis_estop_halt(void);      // bezpieczne w ISR
+void axis_estop_clear(void);     // kontekst zadania, po resecie E-STOP
+bool axis_estop_is_active(void);

@@ -656,9 +656,9 @@ static void draw_spindle(void)
     snprintf(buf, sizeof(buf), "%5lu kr/s", (unsigned long)sp.steps_per_s);
     draw_row(y, "STEP:", buf, COL_VAL, false);
     y += ROW_H;
-    const char *ds[] = {"STOP", "BIEG", "ROZP", "HAM", "E-STP", "BLAD"};
+    const char *ds[] = {"E-STP", "STOP", "ROZP", "HAM", "BIEG"};
     const char *dirs = (ui.spindle_dir == SPINDLE_DIR_FWD) ? "FWD" : "REV";
-    snprintf(buf, sizeof(buf), "%s %s", dirs, (sp.state < 6) ? ds[sp.state] : "???");
+    snprintf(buf, sizeof(buf), "%s %s", dirs, (sp.state < 5) ? ds[sp.state] : "???");
     draw_row(y, "Stan:", buf,
              (sp.state == SPINDLE_STATE_RUNNING) ? COL_OK : (sp.state == SPINDLE_STATE_ESTOP) ? COLOR_RED
                                                                                               : COL_LABEL,

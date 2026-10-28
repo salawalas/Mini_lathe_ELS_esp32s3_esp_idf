@@ -71,12 +71,18 @@ static void IRAM_ATTR spindle_rev_cb(void *arg)
 }
 
 // ── Task ELS – konsumuje impulsy wrzeciona i steruje osią Z ──
+// E-STOP aktywny (grzybek lub programowy) – ELS musi natychmiast przerwać
+static inline bool els_estop(void)
+{
+    return spindle_estop_is_active() || axis_estop_is_active();
+}
+
 static void els_task_fn(void *arg)
 {
     els_notify_target = xTaskGetCurrentTaskHandle();
 
     for (uint8_t pass = 1; pass <= e.cfg.passes; pass++) {
-        if (e.stop_request) break;
+        if (e.stop_request || els_estop()) { e.stop_request = true; break; }
         e.pass_current = pass;
         e.steps_sent   = 0;
         e.accumulator  = 0;
@@ -113,7 +119,7 @@ static void els_task_fn(void *arg)
         while (!spindle_is_at_speed() && w < 100) {
             vTaskDelay(pdMS_TO_TICKS(50));
             w++;
-            if (e.stop_request) goto done;
+            if (e.stop_request || els_estop()) goto done;
         }
         if (!spindle_is_at_speed()) {
             e.state = ELS_STATE_ERROR;
@@ -141,10 +147,10 @@ static void els_task_fn(void *arg)
                     e.retract_x_mm = axis_get_position_mm(g_axis_x);
                     axis_move_to_mm(g_axis_x, e.retract_x_mm + 0.5f, 30.0f);
                 }
-                while (e.pause_request && !e.stop_request) {
+                while (e.pause_request && !e.stop_request && !els_estop()) {
                     vTaskDelay(pdMS_TO_TICKS(100));
                 }
-                if (e.stop_request) break;
+                if (e.stop_request || els_estop()) { e.stop_request = true; break; }
                 // Powrót X i wznowienie
                 if (g_axis_x) {
                     axis_move_to_mm(g_axis_x, e.retract_x_mm, 30.0f);
@@ -156,9 +162,10 @@ static void els_task_fn(void *arg)
             }
 
             uint32_t n = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(500));
+            if (els_estop()) { e.stop_request = true; break; }
             if (!n && !e.rev_pending) break;  // timeout = koniec przejścia
 
-            while (e.accumulator >= 256 && !e.stop_request && !e.pause_request) {
+            while (e.accumulator >= 256 && !e.stop_request && !e.pause_request && !els_estop()) {
                 int32_t steps = e.accumulator / 256;
                 if (steps > 160) steps = 160;  // batch limit – nie blokuj
                 e.accumulator -= steps * 256;

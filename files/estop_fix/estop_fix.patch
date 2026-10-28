@@ -1,0 +1,345 @@
+--- a/components/axis/axis.c
++++ b/components/axis/axis.c
+@@ -46,6 +46,9 @@
+ axis_handle_t g_axis_x = NULL;
+ static axis_t s_axes[AXIS_COUNT];
+ 
++// Blokada E-STOP: dopóki aktywna, żadna oś nie przyjmie ruchu (ustawiana z ISR grzybka)
++static volatile bool s_estop = false;
++
+ static inline uint64_t IRAM_ATTR speed_to_alarm(uint32_t sps)
+ {
+     if (!sps)
+@@ -189,7 +192,7 @@
+     ESP_ERROR_CHECK(gpio_config(&io));
+     gpio_set_level(ax->cfg->pin_step, 0);
+     gpio_set_level(ax->cfg->pin_dir, 0);
+-    gpio_set_level(ax->cfg->pin_ena, AXIS_ENA_ACTIVE);
++    gpio_set_level(ax->cfg->pin_ena, s_estop ? AXIS_ENA_IDLE : AXIS_ENA_ACTIVE);
+     ax->move_done = xSemaphoreCreateBinary();
+     gptimer_config_t tcfg = {.clk_src = GPTIMER_CLK_SRC_DEFAULT, .direction = GPTIMER_COUNT_UP, .resolution_hz = AXIS_TIMER_RES_HZ};
+     ESP_ERROR_CHECK(gptimer_new_timer(&tcfg, &ax->timer));
+@@ -209,20 +212,22 @@
+     return ax;
+ }
+ 
+-void axis_stop(axis_handle_t ax)
++void IRAM_ATTR axis_stop(axis_handle_t ax)
+ {
+     if (ax && ax->state != AXIS_STATE_IDLE)
+         ax->stop_request = true;
+ }
+ void axis_enable(axis_handle_t ax, bool en)
+ {
++    if (s_estop && en)
++        return; // E-STOP: drivery zostają wyłączone do resetu
+     if (ax)
+         gpio_set_level(ax->cfg->pin_ena, en ? AXIS_ENA_ACTIVE : AXIS_ENA_IDLE);
+ }
+ 
+ void axis_jog(axis_handle_t ax, axis_dir_t dir, uint16_t steps, uint8_t pct)
+ {
+-    if (!ax || ax->state != AXIS_STATE_IDLE || !steps)
++    if (!ax || s_estop || ax->state != AXIS_STATE_IDLE || !steps)
+         return;
+     if (!limits_can_move(ax, dir))
+         return;
+@@ -234,7 +239,7 @@
+ 
+ void axis_run(axis_handle_t ax, axis_dir_t dir, float speed_mm_min)
+ {
+-    if (!ax)
++    if (!ax || s_estop)
+         return;
+     if (!limits_can_move(ax, dir))
+         return;
+@@ -252,6 +257,8 @@
+ {
+     if (!ax || !mv || !mv->steps)
+         return true;
++    if (s_estop)
++        return false;
+     axis_dir_t dir = (mv->steps > 0) ? AXIS_DIR_POS : AXIS_DIR_NEG;
+     if (!limits_can_move(ax, dir))
+         return false;
+@@ -266,7 +273,7 @@
+     if (timeout_ms > 120000)
+         timeout_ms = 120000; // max 2 minuty
+     if (xSemaphoreTake(ax->move_done, pdMS_TO_TICKS(timeout_ms)) == pdTRUE)
+-        return true;
++        return !s_estop; // przerwany przez E-STOP = ruch niewykonany
+     axis_stop(ax);
+     return false;
+ }
+@@ -350,3 +357,43 @@
+ {
+     return ax ? ax->cfg->steps_per_mm : 0.0f;
+ }
++
++// ---------------------------------------------------------------------------
++//  E-STOP osi
++// ---------------------------------------------------------------------------
++
++// Wywoływane z ISR grzybka (i z E-STOP programowego): zatrzymaj obie osie,
++// wyłącz drivery DM556 (ENA) i zablokuj nowe ruchy aż do axis_estop_clear().
++void IRAM_ATTR axis_estop_halt(void)
++{
++    s_estop = true;
++    for (int i = 0; i < AXIS_COUNT; i++)
++    {
++        axis_t *ax = &s_axes[i];
++        if (!ax->cfg)
++            continue; // oś jeszcze nie zainicjalizowana (axis_init uwzględni s_estop)
++        ax->stop_request = true; // ISR timera zatrzyma STEP przy najbliższym tiku
++        gpio_set_level(ax->cfg->pin_ena, AXIS_ENA_IDLE);
++    }
++}
++
++// Zdjęcie blokady po resecie E-STOP (kontekst zadania).
++void axis_estop_clear(void)
++{
++    for (int i = 0; i < AXIS_COUNT; i++)
++    {
++        axis_t *ax = &s_axes[i];
++        if (!ax->cfg)
++            continue;
++        if (ax->state == AXIS_STATE_IDLE)
++            ax->stop_request = false;
++        gpio_set_level(ax->cfg->pin_ena, AXIS_ENA_ACTIVE);
++    }
++    s_estop = false;
++    ESP_LOGW(TAG, "E-STOP zdjety – osie odblokowane. Pozycje mogly sie zgubic: wymagane ponowne bazowanie");
++}
++
++bool axis_estop_is_active(void)
++{
++    return s_estop;
++}
+--- a/components/axis/include/axis.h
++++ b/components/axis/include/axis.h
+@@ -75,3 +75,7 @@
+ void axis_set_max_speed_steps_s(axis_handle_t ax, uint32_t sps);
+ float axis_get_steps_per_mm(axis_handle_t ax);
+ 
++// E-STOP: zatrzymanie obu osi, wyłączenie driverów (ENA), blokada nowych ruchów.
++void axis_estop_halt(void);      // bezpieczne w ISR
++void axis_estop_clear(void);     // kontekst zadania, po resecie E-STOP
++bool axis_estop_is_active(void);
+--- a/components/spindle/spindle.c
++++ b/components/spindle/spindle.c
+@@ -1,5 +1,6 @@
+ // spindle.c – wrzeciono krokowe NEMA23 + DM556 #1 + MOSFET E-STOP
+ #include "spindle.h"
++#include "axis.h"
+ #include <string.h>
+ #include "freertos/FreeRTOS.h"
+ #include "freertos/task.h"
+@@ -41,14 +42,32 @@
+     return p;
+ }
+ 
+-static void IRAM_ATTR estop_isr(void *arg)
++// Wspólna procedura E-STOP: grzybek (ISR), E-STOP programowy (UI / Wi-Fi / BLE)
++// oraz wykrycie wciśniętego grzybka przy starcie. Bezpieczna w ISR (bez blokowania).
++static void IRAM_ATTR do_estop(void)
+ {
++    // 1. Wrzeciono: odetnij zasilanie (jeśli sterowane z GPIO) i wyłącz driver
+     gpio_set_level(SPINDLE_POWER_PIN, 0);
++    gpio_set_level(SPINDLE_PIN_ENA, SPINDLE_ENA_IDLE);
+     s.power_enabled = false;
+-    s.stop_request  = true;
+-    s.estop_active  = true;
+-    s.state         = SPINDLE_STATE_ESTOP;
+-    if (s.estop_cb) s.estop_cb(s.estop_cb_arg);
++
++    // 2. Zatrzymaj generator STEP wrzeciona (timer wykryje flagę przy najbliższym tiku)
++    s.stop_request = true;
++    s.estop_active = true;
++    s.state        = SPINDLE_STATE_ESTOP;
++
++    // 3. Osie Z i X: zatrzymaj impulsy, wyłącz drivery, zablokuj nowe ruchy
++    axis_estop_halt();
++
++    // 4. Powiadom UI (callback tylko ustawia flagę odświeżenia ekranu)
++    if (s.estop_cb != NULL) {
++        s.estop_cb(s.estop_cb_arg);
++    }
++}
++
++static void IRAM_ATTR estop_isr(void *arg)
++{
++    do_estop();
+     portYIELD_FROM_ISR();
+ }
+ 
+@@ -96,6 +115,7 @@
+ void spindle_init(void)
+ {
+     s.mutex = xSemaphoreCreateMutex();
++    s.state = SPINDLE_STATE_STOPPED; // enum zaczyna się od ESTOP=0, a s jest wyzerowane
+ 
+     gpio_config_t out = {
+         .pin_bit_mask = (1ULL<<SPINDLE_PIN_STEP)|(1ULL<<SPINDLE_PIN_DIR)|
+@@ -119,6 +139,14 @@
+     }
+     gpio_isr_handler_add(SPINDLE_ESTOP_PIN, estop_isr, NULL);
+ 
++    // ISR reaguje tylko na zbocze, więc sprawdź, czy grzybek nie jest wciśnięty już przy starcie.
++    // Krótka zwłoka: zewnętrzny filtr RC (pull-up 4,7 kΩ + 100 nF) potrzebuje ok. 2 ms na ustalenie poziomu.
++    vTaskDelay(pdMS_TO_TICKS(10));
++    if (gpio_get_level(SPINDLE_ESTOP_PIN) == 0) {
++        ESP_LOGW(TAG, "Grzybek E-STOP wcisniety przy starcie – blokada aktywna");
++        do_estop();
++    }
++
+     gptimer_config_t tcfg = { .clk_src=GPTIMER_CLK_SRC_DEFAULT,
+                                .direction=GPTIMER_COUNT_UP, .resolution_hz=1000000UL };
+     ESP_ERROR_CHECK(gptimer_new_timer(&tcfg, &s_timer));
+@@ -165,8 +193,8 @@
+ 
+ void spindle_emergency_stop(void)
+ {
+-    gpio_set_level(SPINDLE_POWER_PIN, 0);
+-    s.power_enabled=false; s.stop_request=true; s.state=SPINDLE_STATE_ESTOP;
++    ESP_LOGW(TAG, "E-STOP (programowy): wrzeciono i osie zatrzymane");
++    do_estop();
+ }
+ 
+ void spindle_set_rpm(uint16_t rpm)
+@@ -213,8 +241,18 @@
+ bool spindle_estop_is_active(void) { return s.estop_active; }
+ void spindle_estop_reset(void)
+ {
+-    if (gpio_get_level(SPINDLE_ESTOP_PIN)==0) { ESP_LOGW(TAG,"Wylacznik wciaz wcisniety!"); return; }
+-    s.estop_active=false; s.state=SPINDLE_STATE_STOPPED;
++    // Grzybek wciąż wciśnięty (NO zwarty do GND) – reset niedozwolony
++    if (gpio_get_level(SPINDLE_ESTOP_PIN) == 0) {
++        ESP_LOGW(TAG, "E-STOP reset odmowiony – grzybek wciaz wcisniety");
++        return;
++    }
++    s.rpm_target   = 0;
++    s.estop_active = false;
++    s.state        = SPINDLE_STATE_STOPPED;
++    gpio_set_level(SPINDLE_PIN_ENA, SPINDLE_ENA_ACTIVE);
++    axis_estop_clear();
++    // Zasilanie wrzeciona (GPIO17) wraca dopiero przy kolejnym spindle_start()
++    ESP_LOGI(TAG, "E-STOP zdjety – wrzeciono gotowe do startu");
+ }
+ void spindle_register_step_callback(uint32_t n, void (*cb)(void*), void *arg)
+     { s.cb_steps=n; s.cb=cb; s.cb_arg=arg; s.cb_counter=0; }
+--- a/components/spindle/CMakeLists.txt
++++ b/components/spindle/CMakeLists.txt
+@@ -1,5 +1,5 @@
+ idf_component_register(
+     SRCS        "spindle.c"
+     INCLUDE_DIRS "include"
+-    REQUIRES esp_driver_gptimer esp_driver_gpio esp_rom esp_timer freertos
++    REQUIRES esp_driver_gptimer esp_driver_gpio esp_rom esp_timer freertos axis
+ )
+--- a/components/motion/motion.c
++++ b/components/motion/motion.c
+@@ -71,12 +71,18 @@
+ }
+ 
+ // ── Task ELS – konsumuje impulsy wrzeciona i steruje osią Z ──
++// E-STOP aktywny (grzybek lub programowy) – ELS musi natychmiast przerwać
++static inline bool els_estop(void)
++{
++    return spindle_estop_is_active() || axis_estop_is_active();
++}
++
+ static void els_task_fn(void *arg)
+ {
+     els_notify_target = xTaskGetCurrentTaskHandle();
+ 
+     for (uint8_t pass = 1; pass <= e.cfg.passes; pass++) {
+-        if (e.stop_request) break;
++        if (e.stop_request || els_estop()) { e.stop_request = true; break; }
+         e.pass_current = pass;
+         e.steps_sent   = 0;
+         e.accumulator  = 0;
+@@ -113,7 +119,7 @@
+         while (!spindle_is_at_speed() && w < 100) {
+             vTaskDelay(pdMS_TO_TICKS(50));
+             w++;
+-            if (e.stop_request) goto done;
++            if (e.stop_request || els_estop()) goto done;
+         }
+         if (!spindle_is_at_speed()) {
+             e.state = ELS_STATE_ERROR;
+@@ -141,10 +147,10 @@
+                     e.retract_x_mm = axis_get_position_mm(g_axis_x);
+                     axis_move_to_mm(g_axis_x, e.retract_x_mm + 0.5f, 30.0f);
+                 }
+-                while (e.pause_request && !e.stop_request) {
++                while (e.pause_request && !e.stop_request && !els_estop()) {
+                     vTaskDelay(pdMS_TO_TICKS(100));
+                 }
+-                if (e.stop_request) break;
++                if (e.stop_request || els_estop()) { e.stop_request = true; break; }
+                 // Powrót X i wznowienie
+                 if (g_axis_x) {
+                     axis_move_to_mm(g_axis_x, e.retract_x_mm, 30.0f);
+@@ -156,9 +162,10 @@
+             }
+ 
+             uint32_t n = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(500));
++            if (els_estop()) { e.stop_request = true; break; }
+             if (!n && !e.rev_pending) break;  // timeout = koniec przejścia
+ 
+-            while (e.accumulator >= 256 && !e.stop_request && !e.pause_request) {
++            while (e.accumulator >= 256 && !e.stop_request && !e.pause_request && !els_estop()) {
+                 int32_t steps = e.accumulator / 256;
+                 if (steps > 160) steps = 160;  // batch limit – nie blokuj
+                 e.accumulator -= steps * 256;
+--- a/components/gcode/gcode.c
++++ b/components/gcode/gcode.c
+@@ -344,6 +344,12 @@
+ // ────────────────────────────────────────────────────────────
+ //  Task wykonujący plik G-code linia po linii
+ // ────────────────────────────────────────────────────────────
++// E-STOP aktywny (grzybek lub programowy): program kończy się błędem natychmiast
++static inline bool gc_estop(void)
++{
++    return spindle_estop_is_active() || axis_estop_is_active();
++}
++
+ static void gcode_task(void *arg)
+ {
+     ESP_LOGI(TAG, "Start G-code: %s (%lu linii)", g.file_name, g.line_total);
+@@ -353,10 +359,21 @@
+     for (uint32_t ln = 1; ln <= g.line_total; ln++) {
+         if (g.stop_flag) break;
+ 
++        if (gc_estop()) {
++            snprintf(g.error_msg, sizeof(g.error_msg), "E-STOP");
++            g.state = GCODE_STATE_ERROR;
++            goto done;
++        }
++
+         // Pauza?
+         while (g.state == GCODE_STATE_PAUSED) {
+             vTaskDelay(pdMS_TO_TICKS(100));
+             if (g.stop_flag) goto done;
++            if (gc_estop()) {
++                snprintf(g.error_msg, sizeof(g.error_msg), "E-STOP");
++                g.state = GCODE_STATE_ERROR;
++                goto done;
++            }
+         }
+ 
+         const char *line_start = find_line(g.file_buf, g.file_len, ln);
+--- a/components/ui_menu/ui_menu.c
++++ b/components/ui_menu/ui_menu.c
+@@ -656,9 +656,9 @@
+     snprintf(buf, sizeof(buf), "%5lu kr/s", (unsigned long)sp.steps_per_s);
+     draw_row(y, "STEP:", buf, COL_VAL, false);
+     y += ROW_H;
+-    const char *ds[] = {"STOP", "BIEG", "ROZP", "HAM", "E-STP", "BLAD"};
++    const char *ds[] = {"E-STP", "STOP", "ROZP", "HAM", "BIEG"};
+     const char *dirs = (ui.spindle_dir == SPINDLE_DIR_FWD) ? "FWD" : "REV";
+-    snprintf(buf, sizeof(buf), "%s %s", dirs, (sp.state < 6) ? ds[sp.state] : "???");
++    snprintf(buf, sizeof(buf), "%s %s", dirs, (sp.state < 5) ? ds[sp.state] : "???");
+     draw_row(y, "Stan:", buf,
+              (sp.state == SPINDLE_STATE_RUNNING) ? COL_OK : (sp.state == SPINDLE_STATE_ESTOP) ? COLOR_RED
+                                                                                               : COL_LABEL,

@@ -344,6 +344,12 @@ static bool exec_one_line(const char *line_raw, uint32_t len)
 // ────────────────────────────────────────────────────────────
 //  Task wykonujący plik G-code linia po linii
 // ────────────────────────────────────────────────────────────
+// E-STOP aktywny (grzybek lub programowy): program kończy się błędem natychmiast
+static inline bool gc_estop(void)
+{
+    return spindle_estop_is_active() || axis_estop_is_active();
+}
+
 static void gcode_task(void *arg)
 {
     ESP_LOGI(TAG, "Start G-code: %s (%lu linii)", g.file_name, g.line_total);
@@ -353,10 +359,21 @@ static void gcode_task(void *arg)
     for (uint32_t ln = 1; ln <= g.line_total; ln++) {
         if (g.stop_flag) break;
 
+        if (gc_estop()) {
+            snprintf(g.error_msg, sizeof(g.error_msg), "E-STOP");
+            g.state = GCODE_STATE_ERROR;
+            goto done;
+        }
+
         // Pauza?
         while (g.state == GCODE_STATE_PAUSED) {
             vTaskDelay(pdMS_TO_TICKS(100));
             if (g.stop_flag) goto done;
+            if (gc_estop()) {
+                snprintf(g.error_msg, sizeof(g.error_msg), "E-STOP");
+                g.state = GCODE_STATE_ERROR;
+                goto done;
+            }
         }
 
         const char *line_start = find_line(g.file_buf, g.file_len, ln);

@@ -1,5 +1,6 @@
 // spindle.c – wrzeciono krokowe NEMA23 + DM556 #1 + MOSFET E-STOP
 #include "spindle.h"
+#include "axis.h"
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -41,14 +42,32 @@ static inline uint64_t IRAM_ATTR s2a(uint32_t sps)
     return p;
 }
 
+// Wspólna procedura E-STOP: grzybek (ISR), E-STOP programowy (UI / Wi-Fi / BLE)
+// oraz wykrycie wciśniętego grzybka przy starcie. Bezpieczna w ISR (bez blokowania).
+static void IRAM_ATTR do_estop(void)
+{
+    // 1. Wrzeciono: odetnij zasilanie (jeśli sterowane z GPIO) i wyłącz driver
+    gpio_set_level(SPINDLE_POWER_PIN, 0);
+    gpio_set_level(SPINDLE_PIN_ENA, SPINDLE_ENA_IDLE);
+    s.power_enabled = false;
+
+    // 2. Zatrzymaj generator STEP wrzeciona (timer wykryje flagę przy najbliższym tiku)
+    s.stop_request = true;
+    s.estop_active = true;
+    s.state        = SPINDLE_STATE_ESTOP;
+
+    // 3. Osie Z i X: zatrzymaj impulsy, wyłącz drivery, zablokuj nowe ruchy
+    axis_estop_halt();
+
+    // 4. Powiadom UI (callback tylko ustawia flagę odświeżenia ekranu)
+    if (s.estop_cb != NULL) {
+        s.estop_cb(s.estop_cb_arg);
+    }
+}
+
 static void IRAM_ATTR estop_isr(void *arg)
 {
-    gpio_set_level(SPINDLE_POWER_PIN, 0);
-    s.power_enabled = false;
-    s.stop_request  = true;
-    s.estop_active  = true;
-    s.state         = SPINDLE_STATE_ESTOP;
-    if (s.estop_cb) s.estop_cb(s.estop_cb_arg);
+    do_estop();
     portYIELD_FROM_ISR();
 }
 
@@ -96,6 +115,7 @@ static bool IRAM_ATTR spindle_isr(gptimer_handle_t timer,
 void spindle_init(void)
 {
     s.mutex = xSemaphoreCreateMutex();
+    s.state = SPINDLE_STATE_STOPPED; // enum zaczyna się od ESTOP=0, a s jest wyzerowane
 
     gpio_config_t out = {
         .pin_bit_mask = (1ULL<<SPINDLE_PIN_STEP)|(1ULL<<SPINDLE_PIN_DIR)|
@@ -118,6 +138,14 @@ void spindle_init(void)
         ESP_ERROR_CHECK(r); // ESP_ERR_INVALID_STATE = już zainstalowane = OK
     }
     gpio_isr_handler_add(SPINDLE_ESTOP_PIN, estop_isr, NULL);
+
+    // ISR reaguje tylko na zbocze, więc sprawdź, czy grzybek nie jest wciśnięty już przy starcie.
+    // Krótka zwłoka: zewnętrzny filtr RC (pull-up 4,7 kΩ + 100 nF) potrzebuje ok. 2 ms na ustalenie poziomu.
+    vTaskDelay(pdMS_TO_TICKS(10));
+    if (gpio_get_level(SPINDLE_ESTOP_PIN) == 0) {
+        ESP_LOGW(TAG, "Grzybek E-STOP wcisniety przy starcie – blokada aktywna");
+        do_estop();
+    }
 
     gptimer_config_t tcfg = { .clk_src=GPTIMER_CLK_SRC_DEFAULT,
                                .direction=GPTIMER_COUNT_UP, .resolution_hz=1000000UL };
@@ -165,8 +193,8 @@ void spindle_stop(void)
 
 void spindle_emergency_stop(void)
 {
-    gpio_set_level(SPINDLE_POWER_PIN, 0);
-    s.power_enabled=false; s.stop_request=true; s.state=SPINDLE_STATE_ESTOP;
+    ESP_LOGW(TAG, "E-STOP (programowy): wrzeciono i osie zatrzymane");
+    do_estop();
 }
 
 void spindle_set_rpm(uint16_t rpm)
@@ -213,8 +241,18 @@ bool spindle_power_is_enabled(void){ return s.power_enabled; }
 bool spindle_estop_is_active(void) { return s.estop_active; }
 void spindle_estop_reset(void)
 {
-    if (gpio_get_level(SPINDLE_ESTOP_PIN)==0) { ESP_LOGW(TAG,"Wylacznik wciaz wcisniety!"); return; }
-    s.estop_active=false; s.state=SPINDLE_STATE_STOPPED;
+    // Grzybek wciąż wciśnięty (NO zwarty do GND) – reset niedozwolony
+    if (gpio_get_level(SPINDLE_ESTOP_PIN) == 0) {
+        ESP_LOGW(TAG, "E-STOP reset odmowiony – grzybek wciaz wcisniety");
+        return;
+    }
+    s.rpm_target   = 0;
+    s.estop_active = false;
+    s.state        = SPINDLE_STATE_STOPPED;
+    gpio_set_level(SPINDLE_PIN_ENA, SPINDLE_ENA_ACTIVE);
+    axis_estop_clear();
+    // Zasilanie wrzeciona (GPIO17) wraca dopiero przy kolejnym spindle_start()
+    ESP_LOGI(TAG, "E-STOP zdjety – wrzeciono gotowe do startu");
 }
 void spindle_register_step_callback(uint32_t n, void (*cb)(void*), void *arg)
     { s.cb_steps=n; s.cb=cb; s.cb_arg=arg; s.cb_counter=0; }

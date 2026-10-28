@@ -46,6 +46,9 @@ axis_handle_t g_axis_z = NULL;
 axis_handle_t g_axis_x = NULL;
 static axis_t s_axes[AXIS_COUNT];
 
+// Blokada E-STOP: dopóki aktywna, żadna oś nie przyjmie ruchu (ustawiana z ISR grzybka)
+static volatile bool s_estop = false;
+
 static inline uint64_t IRAM_ATTR speed_to_alarm(uint32_t sps)
 {
     if (!sps)
@@ -189,7 +192,7 @@ axis_handle_t axis_init(axis_id_t id)
     ESP_ERROR_CHECK(gpio_config(&io));
     gpio_set_level(ax->cfg->pin_step, 0);
     gpio_set_level(ax->cfg->pin_dir, 0);
-    gpio_set_level(ax->cfg->pin_ena, AXIS_ENA_ACTIVE);
+    gpio_set_level(ax->cfg->pin_ena, s_estop ? AXIS_ENA_IDLE : AXIS_ENA_ACTIVE);
     ax->move_done = xSemaphoreCreateBinary();
     gptimer_config_t tcfg = {.clk_src = GPTIMER_CLK_SRC_DEFAULT, .direction = GPTIMER_COUNT_UP, .resolution_hz = AXIS_TIMER_RES_HZ};
     ESP_ERROR_CHECK(gptimer_new_timer(&tcfg, &ax->timer));
@@ -209,20 +212,22 @@ axis_handle_t axis_init(axis_id_t id)
     return ax;
 }
 
-void axis_stop(axis_handle_t ax)
+void IRAM_ATTR axis_stop(axis_handle_t ax)
 {
     if (ax && ax->state != AXIS_STATE_IDLE)
         ax->stop_request = true;
 }
 void axis_enable(axis_handle_t ax, bool en)
 {
+    if (s_estop && en)
+        return; // E-STOP: drivery zostają wyłączone do resetu
     if (ax)
         gpio_set_level(ax->cfg->pin_ena, en ? AXIS_ENA_ACTIVE : AXIS_ENA_IDLE);
 }
 
 void axis_jog(axis_handle_t ax, axis_dir_t dir, uint16_t steps, uint8_t pct)
 {
-    if (!ax || ax->state != AXIS_STATE_IDLE || !steps)
+    if (!ax || s_estop || ax->state != AXIS_STATE_IDLE || !steps)
         return;
     if (!limits_can_move(ax, dir))
         return;
@@ -234,7 +239,7 @@ void axis_jog(axis_handle_t ax, axis_dir_t dir, uint16_t steps, uint8_t pct)
 
 void axis_run(axis_handle_t ax, axis_dir_t dir, float speed_mm_min)
 {
-    if (!ax)
+    if (!ax || s_estop)
         return;
     if (!limits_can_move(ax, dir))
         return;
@@ -252,6 +257,8 @@ bool axis_move(axis_handle_t ax, axis_move_t *mv)
 {
     if (!ax || !mv || !mv->steps)
         return true;
+    if (s_estop)
+        return false;
     axis_dir_t dir = (mv->steps > 0) ? AXIS_DIR_POS : AXIS_DIR_NEG;
     if (!limits_can_move(ax, dir))
         return false;
@@ -266,7 +273,7 @@ bool axis_move(axis_handle_t ax, axis_move_t *mv)
     if (timeout_ms > 120000)
         timeout_ms = 120000; // max 2 minuty
     if (xSemaphoreTake(ax->move_done, pdMS_TO_TICKS(timeout_ms)) == pdTRUE)
-        return true;
+        return !s_estop; // przerwany przez E-STOP = ruch niewykonany
     axis_stop(ax);
     return false;
 }
@@ -349,4 +356,44 @@ void axis_set_max_speed_steps_s(axis_handle_t ax, uint32_t sps)
 float axis_get_steps_per_mm(axis_handle_t ax)
 {
     return ax ? ax->cfg->steps_per_mm : 0.0f;
+}
+
+// ---------------------------------------------------------------------------
+//  E-STOP osi
+// ---------------------------------------------------------------------------
+
+// Wywoływane z ISR grzybka (i z E-STOP programowego): zatrzymaj obie osie,
+// wyłącz drivery DM556 (ENA) i zablokuj nowe ruchy aż do axis_estop_clear().
+void IRAM_ATTR axis_estop_halt(void)
+{
+    s_estop = true;
+    for (int i = 0; i < AXIS_COUNT; i++)
+    {
+        axis_t *ax = &s_axes[i];
+        if (!ax->cfg)
+            continue; // oś jeszcze nie zainicjalizowana (axis_init uwzględni s_estop)
+        ax->stop_request = true; // ISR timera zatrzyma STEP przy najbliższym tiku
+        gpio_set_level(ax->cfg->pin_ena, AXIS_ENA_IDLE);
+    }
+}
+
+// Zdjęcie blokady po resecie E-STOP (kontekst zadania).
+void axis_estop_clear(void)
+{
+    for (int i = 0; i < AXIS_COUNT; i++)
+    {
+        axis_t *ax = &s_axes[i];
+        if (!ax->cfg)
+            continue;
+        if (ax->state == AXIS_STATE_IDLE)
+            ax->stop_request = false;
+        gpio_set_level(ax->cfg->pin_ena, AXIS_ENA_ACTIVE);
+    }
+    s_estop = false;
+    ESP_LOGW(TAG, "E-STOP zdjety – osie odblokowane. Pozycje mogly sie zgubic: wymagane ponowne bazowanie");
+}
+
+bool axis_estop_is_active(void)
+{
+    return s_estop;
 }
